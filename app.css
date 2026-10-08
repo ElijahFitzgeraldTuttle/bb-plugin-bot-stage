@@ -1,0 +1,1131 @@
+/* bb-plugin-bot-stage — styles.
+ *
+ * Everything is derived from BB's own theme tokens (--sidebar, --foreground…),
+ * so the stage follows the user's palette, light or dark. Each lane also gets
+ * its bot's colour as --bot, which tints the bubble, the floor glow and the
+ * activity bars, so a thread is recognisable by its character at a glance.
+ *
+ * Motion is layered so nothing fights over `animation` on one element:
+ *   the lane           — enter, leave (and the FLIP slide, via WAAPI)
+ *   ::before           — the working shimmer along the floor
+ *   ::after            — the needs-you ring, or the done sheen
+ *   the bubble         — its pop, and a nudge when it needs you
+ */
+
+.bst-panel,
+.bst-page {
+  --bst-bg: var(--sidebar, var(--background, #fff));
+  --bst-fg: var(--sidebar-foreground, var(--foreground, #111));
+  --bst-muted: var(--muted-foreground, color-mix(in oklab, var(--bst-fg) 55%, transparent));
+  --bst-line: var(--sidebar-border, var(--border, rgba(127, 127, 127, 0.28)));
+  --bst-hover: var(--sidebar-accent, color-mix(in oklab, var(--bst-fg) 7%, transparent));
+  --bst-ask: #f2a63a;
+  --bst-ok: #3fb67f;
+  --bst-bad: var(--destructive, #e5484d);
+  --bst-ease: cubic-bezier(0.2, 1.3, 0.35, 1);
+  color: var(--bst-fg);
+  font-size: 12px;
+}
+
+.bst-page {
+  --bst-bg: var(--background, #fff);
+  --bst-fg: var(--foreground, #111);
+  --bst-line: var(--border, rgba(127, 127, 127, 0.28));
+  --bst-hover: color-mix(in oklab, var(--bst-fg) 5%, transparent);
+}
+
+/* ------------------------------------------------------------------ *
+ * Title bar
+ * ------------------------------------------------------------------ */
+
+.bst-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  min-height: 0;
+}
+
+.bst-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 6px 6px;
+}
+
+.bst-bar[data-draggable="true"] {
+  cursor: move;
+  user-select: none;
+}
+
+.bst-bar:focus-visible {
+  outline: 1px solid var(--bst-muted);
+  outline-offset: 1px;
+  border-radius: 6px;
+}
+
+.bst-brand {
+  flex: none;
+  white-space: nowrap;
+  font: 600 10px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.bst-lamp {
+  flex: none;
+  white-space: nowrap;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font: 600 9px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: 0.1em;
+  background: color-mix(in oklab, var(--bst-fg) 10%, transparent);
+  color: var(--bst-muted);
+  transition: background-color 0.3s, color 0.3s;
+}
+
+.bst-lamp[data-state="live"] {
+  background: color-mix(in oklab, var(--bst-ok) 18%, transparent);
+  color: var(--bst-ok);
+  animation: bst-breathe 2.4s ease-in-out infinite;
+}
+
+.bst-lamp[data-state="needs"] {
+  background: color-mix(in oklab, var(--bst-ask) 22%, transparent);
+  color: var(--bst-ask);
+  animation: bst-breathe 1.2s ease-in-out infinite;
+}
+
+.bst-grow {
+  flex: 1;
+  align-self: stretch;
+  min-width: 12px;
+}
+
+.bst-count {
+  all: unset;
+  box-sizing: border-box;
+  cursor: pointer;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 11em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-radius: 4px;
+  padding: 1px 3px;
+  font: 400 9px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--bst-muted);
+  transition: color 0.2s;
+}
+
+.bst-count:hover,
+.bst-count[aria-pressed="true"] {
+  color: var(--bst-fg);
+}
+
+.bst-icon {
+  all: unset;
+  box-sizing: border-box;
+  cursor: pointer;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  font-size: 12px;
+  color: var(--bst-muted);
+  transition: background-color 0.2s, color 0.2s, transform 0.2s var(--bst-ease);
+}
+
+.bst-icon:hover {
+  background: var(--bst-hover);
+  color: var(--bst-fg);
+  transform: scale(1.1);
+}
+
+.bst-icon:focus-visible,
+.bst-count:focus-visible,
+.bst-title:focus-visible,
+.bst-bubble:focus-visible,
+.bst-dismiss:focus-visible {
+  outline: 1px solid var(--bst-muted);
+  outline-offset: 1px;
+}
+
+.bst-empty {
+  margin: 0;
+  padding: 14px 10px 16px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--bst-muted);
+}
+
+/* ------------------------------------------------------------------ *
+ * The list
+ * ------------------------------------------------------------------ */
+
+.bst-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklab, currentColor 22%, transparent) transparent;
+}
+
+.bst-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.bst-list::-webkit-scrollbar-thumb {
+  background: color-mix(in oklab, currentColor 22%, transparent);
+  border-radius: 9999px;
+}
+
+/* The sidebar peek is a fixed-height monitor on purpose: BB animates the
+ * disclosure's height, so a list that grew and shrank would fight it. */
+.bst-list[data-variant="compact"] {
+  display: block;
+}
+
+.bst-floating-list {
+  max-height: calc(100vh - 7rem);
+}
+
+.bst-fade-bottom {
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 18px), transparent);
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 18px), transparent);
+}
+
+.bst-list[data-variant="roomy"] {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 380px), 1fr));
+  gap: 10px;
+  overflow: visible;
+}
+
+/* ------------------------------------------------------------------ *
+ * A lane
+ * ------------------------------------------------------------------ */
+
+.bst-lane {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  box-sizing: border-box;
+  height: var(--lane-h);
+  max-height: var(--lane-h);
+  padding: 4px 8px 4px 2px;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  transition: background-color 0.3s, border-color 0.3s, opacity 0.5s, filter 0.5s;
+}
+
+.bst-lane:hover {
+  background: var(--bst-hover);
+}
+
+.bst-lane[data-variant="roomy"] {
+  padding: 8px 12px 8px 4px;
+  border-color: var(--bst-line);
+  background: color-mix(in oklab, var(--bst-fg) 2.5%, var(--bst-bg));
+  gap: 8px;
+}
+
+/* A bot with nothing to do is dimmed, asleep or not, until you look at it. */
+.bst-lane[data-busy="false"][data-mood="idle"],
+.bst-lane[data-busy="false"][data-mood="watching"],
+.bst-lane[data-mood="sleeping"] {
+  opacity: 0.74;
+  filter: saturate(0.75);
+}
+
+.bst-lane[data-busy="false"][data-mood="idle"]:hover,
+.bst-lane[data-busy="false"][data-mood="watching"]:hover,
+.bst-lane[data-mood="sleeping"]:hover {
+  opacity: 1;
+  filter: none;
+}
+
+/* Entrance: the lane lands with a little overshoot, in order. */
+.bst-lane[data-entering="true"] {
+  animation: bst-enter 0.6s var(--bst-ease) var(--delay, 0ms) both;
+}
+
+/* Exit: it steps aside and folds away. */
+.bst-lane[data-leaving="true"] {
+  animation: bst-leave 0.42s cubic-bezier(0.5, 0, 0.8, 0.4) forwards;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+/* The bot. A faint glow line stands in for the floor it is standing on. */
+.bst-actor {
+  position: relative;
+  flex: none;
+  align-self: flex-end;
+  cursor: grab;
+  z-index: 20;
+  overflow: visible;
+}
+
+.bst-actor:active {
+  cursor: grabbing;
+}
+
+/* The room stays behind the original bot and all of its drawn expressions. */
+.bst-workspace {
+  position: absolute;
+  left: 1px;
+  top: 3px;
+  width: 128px;
+  height: 128px;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.bst-workspace canvas {
+  display: block;
+  width: 128px;
+  height: 128px;
+  image-rendering: pixelated;
+}
+
+.bst-workspace[data-state="pending"] {
+  border: 1px solid var(--bst-line);
+  border-radius: 3px;
+}
+
+.bst-lane[data-variant="compact"] .bst-actor {
+  position: absolute;
+  left: 5px;
+  bottom: 8px;
+}
+
+.bst-lane[data-variant="compact"] .bst-talk {
+  margin-left: 132px;
+}
+
+.bst-lane[data-variant="roomy"] .bst-workspace {
+  left: 12px;
+  top: 16px;
+}
+
+.bst-talk {
+  position: relative;
+  z-index: 2;
+}
+
+.bst-actor canvas {
+  display: block;
+  image-rendering: pixelated;
+  pointer-events: none;
+}
+
+.bst-actor::after {
+  content: "";
+  position: absolute;
+  left: 6%;
+  right: 6%;
+  bottom: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, var(--glow-soft, transparent), transparent);
+  transition: background 0.5s, opacity 0.5s;
+}
+
+.bst-lane[data-busy="true"] .bst-actor::after {
+  background: linear-gradient(90deg, transparent, var(--glow), transparent);
+}
+
+/* Working: a light runs along the floor under the lane. */
+.bst-lane[data-busy="true"]::before {
+  content: "";
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 0;
+  height: 2px;
+  border-radius: 2px;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent 0%, var(--bot) 50%, transparent 100%);
+  background-size: 40% 100%;
+  background-repeat: no-repeat;
+  opacity: 0.55;
+  animation: bst-run 1.7s linear infinite;
+}
+
+/* Needs you: an amber ring that breathes outward. */
+.bst-lane[data-mood="needs"] {
+  border-color: color-mix(in oklab, var(--bst-ask) 60%, transparent);
+  background: color-mix(in oklab, var(--bst-ask) 8%, transparent);
+}
+
+.bst-lane[data-mood="needs"]::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow: 0 0 0 0 color-mix(in oklab, var(--bst-ask) 55%, transparent);
+  animation: bst-ring 1.9s ease-out infinite;
+}
+
+/* Done: one slow sheen sweeps across it. */
+.bst-lane[data-mood="done"] {
+  border-color: color-mix(in oklab, var(--bst-ok) 45%, transparent);
+}
+
+.bst-lane[data-mood="done"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(105deg, transparent 30%, color-mix(in oklab, var(--bst-ok) 26%, transparent) 50%, transparent 70%);
+  background-size: 250% 100%;
+  animation: bst-sheen 1.3s ease-out 1 both;
+}
+
+.bst-lane[data-mood="failed"] {
+  border-color: color-mix(in oklab, var(--bst-bad) 50%, transparent);
+  background: color-mix(in oklab, var(--bst-bad) 6%, transparent);
+}
+
+/* ------------------------------------------------------------------ *
+ * The words
+ * ------------------------------------------------------------------ */
+
+.bst-talk {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+}
+
+/* Nothing in a lane may be squeezed out of it: the title, the bubble and the
+ * facts each keep their height, and the lane is sized to hold them all. */
+.bst-lane .bst-talk > * {
+  flex: none;
+}
+
+.bst-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 15px;
+  padding-left: 9px;
+}
+
+.bst-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 600;
+  color: color-mix(in oklab, var(--bot) 62%, var(--bst-fg));
+}
+
+.bst-lane[data-guest="true"] .bst-name {
+  font-weight: 500;
+  color: var(--bst-muted);
+}
+
+.bst-badge {
+  flex: none;
+  padding: 1px 5px;
+  border-radius: 999px;
+  font: 600 8.5px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: color-mix(in oklab, var(--bst-fg) 9%, transparent);
+  color: var(--bst-muted);
+  transition: background-color 0.3s, color 0.3s;
+  animation: bst-badge 0.35s var(--bst-ease) both;
+}
+
+.bst-badge[data-mood="working"],
+.bst-badge[data-mood="thinking"],
+.bst-badge[data-mood="talking"] {
+  background: color-mix(in oklab, var(--bot) 22%, transparent);
+  color: color-mix(in oklab, var(--bot) 65%, var(--bst-fg));
+}
+
+.bst-badge[data-mood="needs"] {
+  background: color-mix(in oklab, var(--bst-ask) 26%, transparent);
+  color: color-mix(in oklab, var(--bst-ask) 80%, var(--bst-fg));
+}
+
+.bst-badge[data-mood="done"] {
+  background: color-mix(in oklab, var(--bst-ok) 22%, transparent);
+  color: color-mix(in oklab, var(--bst-ok) 75%, var(--bst-fg));
+}
+
+.bst-badge[data-mood="failed"] {
+  background: color-mix(in oklab, var(--bst-bad) 22%, transparent);
+  color: var(--bst-bad);
+}
+
+.bst-spacer {
+  flex: 1;
+}
+
+.bst-family {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  font: 400 10px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--bst-muted);
+}
+
+.bst-dismiss {
+  all: unset;
+  box-sizing: border-box;
+  cursor: pointer;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 5px;
+  font-size: 10px;
+  color: var(--bst-muted);
+  opacity: 0;
+  transition: opacity 0.2s, background-color 0.2s, color 0.2s;
+}
+
+.bst-lane:hover .bst-dismiss,
+.bst-dismiss:focus-visible {
+  opacity: 1;
+}
+
+.bst-dismiss:hover {
+  background: var(--bst-hover);
+  color: var(--bst-fg);
+}
+
+.bst-title {
+  all: unset;
+  box-sizing: border-box;
+  cursor: pointer;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  padding-left: 9px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  height: 13px;
+  font-size: 10.5px;
+  line-height: 13px;
+  color: var(--bst-muted);
+  transition: color 0.2s;
+}
+
+.bst-title:hover {
+  color: var(--bst-fg);
+}
+
+.bst-project {
+  flex: none;
+  max-width: 7em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 9.5px;
+  opacity: 0.65;
+}
+
+.bst-bubble-box {
+  position: relative;
+  margin-left: 8px;
+  min-width: 0;
+}
+
+/* The speech bubble: the bot's colour in its edge, a tail towards the bot. */
+.bst-bubble {
+  all: unset;
+  box-sizing: border-box;
+  position: relative;
+  display: block;
+  width: 100%;
+  cursor: pointer;
+  padding: 6px 9px;
+  border-radius: 11px 11px 11px 3px;
+  border: 1px solid color-mix(in oklab, var(--bot) 36%, var(--bst-line));
+  background: color-mix(in oklab, var(--bst-fg) 6%, var(--bst-bg));
+  font-size: var(--font, 12px);
+  line-height: 1.34;
+  transform-origin: -8px 75%;
+  animation: bst-pop 0.46s var(--bst-ease) both;
+  transition: border-color 0.25s, background-color 0.25s, box-shadow 0.25s;
+}
+
+.bst-lane[data-variant="compact"] .bst-bubble {
+  padding: 5px 9px;
+  line-height: 1.3;
+}
+
+.bst-bubble::before {
+  content: "";
+  position: absolute;
+  left: -5px;
+  bottom: 9px;
+  width: 8px;
+  height: 8px;
+  transform: rotate(45deg);
+  background: inherit;
+  border-left: 1px solid;
+  border-bottom: 1px solid;
+  border-color: inherit;
+  border-radius: 0 0 0 2px;
+}
+
+.bst-bubble:hover {
+  border-color: color-mix(in oklab, var(--bot) 70%, var(--bst-line));
+  box-shadow: 0 2px 14px -6px var(--glow);
+}
+
+.bst-bubble[data-typing="true"] {
+  border-color: color-mix(in oklab, var(--bot) 60%, var(--bst-line));
+  box-shadow: 0 0 0 3px var(--glow-soft);
+}
+
+.bst-bubble[data-kind="mutter"] {
+  background: transparent;
+  border-style: dashed;
+  color: var(--bst-muted);
+}
+
+.bst-lane[data-mood="needs"] .bst-bubble {
+  border-color: var(--bst-ask);
+  animation: bst-pop 0.46s var(--bst-ease) both, bst-nudge 3s ease-in-out 1.2s infinite;
+}
+
+.bst-lane[data-mood="failed"] .bst-bubble {
+  border-color: var(--bst-bad);
+  animation: bst-pop 0.46s var(--bst-ease) both, bst-shake 0.5s ease-in-out 0.2s 1;
+}
+
+.bst-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--lines, 3);
+  overflow: hidden;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.bst-mutter {
+  font: 400 0.9em/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.bst-code {
+  padding: 0 3px;
+  border-radius: 3px;
+  background: color-mix(in oklab, var(--bst-fg) 12%, transparent);
+  font: 400 0.9em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.bst-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 1px;
+  vertical-align: -0.14em;
+  border-radius: 1px;
+  background: var(--bot);
+  animation: bst-blink 0.8s steps(1) infinite;
+}
+
+.bst-dots {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 1.3em;
+  color: var(--bst-muted);
+}
+
+.bst-dots i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: bst-bob 1.05s ease-in-out infinite;
+}
+
+.bst-dots i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.bst-dots i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+/* ------------------------------------------------------------------ *
+ * The facts underneath
+ * ------------------------------------------------------------------ */
+
+.bst-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding-left: 9px;
+  height: 15px;
+}
+
+.bst-tool {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+  font: 400 10px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--bst-muted);
+}
+
+.bst-tool svg {
+  flex: none;
+  font-size: 11px;
+}
+
+.bst-tool[data-busy="true"] svg {
+  color: var(--bot);
+  animation: bst-breathe 1.1s ease-in-out infinite;
+}
+
+.bst-tool-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bst-file {
+  flex: none;
+  max-width: 9em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: color-mix(in oklab, var(--bst-fg) 8%, transparent);
+  font: 400 9.5px/14px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--bst-muted);
+}
+
+.bst-meta {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font: 400 9.5px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--bst-muted);
+}
+
+.bst-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  height: 11px;
+  color: color-mix(in oklab, var(--bst-fg) 32%, transparent);
+}
+
+.bst-bars[data-busy="true"] {
+  color: var(--bot);
+}
+
+.bst-bars i {
+  width: 2px;
+  border-radius: 1px;
+  background: currentColor;
+  transition: height 0.6s var(--bst-ease);
+}
+
+.bst-ctx[data-hot="true"] {
+  color: var(--bst-bad);
+  font-weight: 600;
+}
+
+/* ------------------------------------------------------------------ *
+ * Slim lanes: the sidebar peek and the floating monitor
+ *
+ * One lane is the bot, a two-line bubble, and one line of facts, with the
+ * thread title sharing the name row. About two thirds of the roomy card, so
+ * a stage of a dozen threads is a short scroll rather than a long one.
+ * ------------------------------------------------------------------ */
+
+.bst-lane[data-variant="compact"] {
+  gap: 2px;
+  padding: 3px 6px 3px 0;
+  border-radius: 12px;
+}
+
+.bst-lane[data-variant="compact"] .bst-talk {
+  gap: 1px;
+}
+
+.bst-lane[data-variant="compact"] .bst-head {
+  height: 14px;
+  gap: 5px;
+  padding-left: 6px;
+}
+
+.bst-lane[data-variant="compact"] .bst-name {
+  flex: none;
+  max-width: 6.5em;
+  font-size: 10.5px;
+}
+
+.bst-head .bst-title {
+  flex: 1 1 0;
+  height: 14px;
+  padding-left: 0;
+  line-height: 14px;
+}
+
+.bst-lane[data-variant="compact"] .bst-badge {
+  font-size: 8px;
+  padding: 0 4px;
+}
+
+.bst-lane[data-variant="compact"] .bst-bubble-box {
+  margin-left: 6px;
+}
+
+.bst-lane[data-variant="compact"] .bst-bubble {
+  padding: 4px 8px;
+  border-radius: 9px 9px 9px 3px;
+  line-height: 1.28;
+}
+
+.bst-lane[data-variant="compact"] .bst-bubble::before {
+  bottom: 7px;
+}
+
+.bst-lane[data-variant="compact"] .bst-foot {
+  height: 13px;
+  gap: 5px;
+  padding-left: 6px;
+}
+
+.bst-lane[data-variant="compact"] .bst-tool {
+  font-size: 9.5px;
+}
+
+.bst-lane[data-variant="compact"] .bst-bars {
+  height: 9px;
+}
+
+.bst-panel[data-variant="compact"] {
+  padding: 4px;
+}
+
+.bst-panel[data-variant="compact"] .bst-bar {
+  gap: 6px;
+  padding: 0 4px 4px;
+}
+
+/* The list tracks the number of bots: it grows and shrinks, softly. */
+.bst-list[data-variant="compact"] {
+  transition: height 0.3s var(--bst-ease);
+}
+
+/* ------------------------------------------------------------------ *
+ * Floating monitor
+ * ------------------------------------------------------------------ */
+
+.bst-popout {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 50;
+  width: min(380px, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
+  overflow: hidden;
+  border-radius: 16px;
+  border: 1px solid var(--sidebar-border, var(--border, rgba(127, 127, 127, 0.3)));
+  background: var(--sidebar, var(--background, #fff));
+  color: var(--sidebar-foreground, var(--foreground, #111));
+  box-shadow: 0 18px 50px -12px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.12);
+  animation: bst-rise 0.4s var(--bst-ease) both;
+}
+
+@media (max-width: 480px) {
+  .bst-popout {
+    right: 0.5rem;
+    bottom: 0.5rem;
+    width: calc(100vw - 1rem);
+    max-height: calc(100vh - 1rem);
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * The full page
+ * ------------------------------------------------------------------ */
+
+.bst-page {
+  box-sizing: border-box;
+  min-height: 100%;
+  padding: 18px 22px 40px;
+  background: var(--bst-bg);
+}
+
+.bst-page .bst-panel {
+  padding: 0;
+  gap: 10px;
+}
+
+.bst-page .bst-bar {
+  padding: 0 0 4px;
+}
+
+.bst-page .bst-empty {
+  padding: 60px 10px;
+  text-align: center;
+  font-size: 13px;
+}
+
+/* ------------------------------------------------------------------ *
+ * Keyframes
+ * ------------------------------------------------------------------ */
+
+@keyframes bst-enter {
+  0% {
+    opacity: 0;
+    transform: translateY(-16px) scale(0.96);
+  }
+  55% {
+    opacity: 1;
+    transform: translateY(3px) scale(1.005);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes bst-leave {
+  0% {
+    opacity: 1;
+    transform: none;
+  }
+  60% {
+    opacity: 0;
+    transform: translateX(26px) scale(0.97);
+    max-height: var(--lane-h);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(26px) scale(0.97);
+    max-height: 0;
+    padding-block: 0;
+    border-width: 0;
+  }
+}
+
+@keyframes bst-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.8) translateX(-6px);
+  }
+  55% {
+    opacity: 1;
+    transform: scale(1.035);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes bst-badge {
+  0% {
+    opacity: 0;
+    transform: translateY(3px) scale(0.85);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes bst-nudge {
+  0%,
+  86%,
+  100% {
+    transform: none;
+  }
+  90% {
+    transform: translateX(3px) rotate(0.6deg);
+  }
+  94% {
+    transform: translateX(-3px) rotate(-0.6deg);
+  }
+  98% {
+    transform: translateX(2px);
+  }
+}
+
+@keyframes bst-shake {
+  0%,
+  100% {
+    transform: none;
+  }
+  25% {
+    transform: translateX(-3px);
+  }
+  50% {
+    transform: translateX(3px);
+  }
+  75% {
+    transform: translateX(-2px);
+  }
+}
+
+@keyframes bst-ring {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in oklab, var(--bst-ask) 55%, transparent);
+  }
+  70%,
+  100% {
+    box-shadow: 0 0 0 9px color-mix(in oklab, var(--bst-ask) 0%, transparent);
+  }
+}
+
+@keyframes bst-sheen {
+  0% {
+    background-position: 130% 0;
+    opacity: 1;
+  }
+  80% {
+    opacity: 1;
+  }
+  100% {
+    background-position: -30% 0;
+    opacity: 0;
+  }
+}
+
+@keyframes bst-run {
+  0% {
+    /* Both endpoints are fully outside the strip, so wrapping is invisible.
+       Percent positions act on the remaining 60% of the strip's width. */
+    background-position: -70% 0;
+  }
+  100% {
+    background-position: 170% 0;
+  }
+}
+
+@keyframes bst-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@keyframes bst-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+@keyframes bst-bob {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.35;
+  }
+  30% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
+}
+
+@keyframes bst-rise {
+  0% {
+    opacity: 0;
+    transform: translateY(14px) scale(0.97);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Calm mode and reduced motion: the bots still act, the furniture stops. */
+@media (prefers-reduced-motion: reduce) {
+  .bst-lane,
+  .bst-lane::before,
+  .bst-lane::after,
+  .bst-bubble,
+  .bst-badge,
+  .bst-lamp,
+  .bst-dots i,
+  .bst-caret,
+  .bst-popout,
+  .bst-tool svg {
+    animation: none !important;
+  }
+}
+
+html[data-calm] .bst-lane,
+html[data-calm] .bst-lane::before,
+html[data-calm] .bst-lane::after,
+html[data-calm] .bst-bubble,
+html[data-calm] .bst-badge,
+html[data-calm] .bst-lamp,
+html[data-calm] .bst-dots i,
+html[data-calm] .bst-caret,
+html[data-calm] .bst-popout,
+html[data-calm] .bst-tool svg {
+  animation: none !important;
+}
+
+/* ------------------------------------------------------------------ *
+ * The sidebar row's live count
+ * ------------------------------------------------------------------ */
+
+.bst-accessory {
+  display: inline-grid;
+  place-items: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  font: 600 9.5px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: color-mix(in oklab, #3fb67f 22%, transparent);
+  color: #3fb67f;
+  animation: bst-breathe 2.4s ease-in-out infinite;
+}
+
+.bst-accessory[data-needs="true"] {
+  background: color-mix(in oklab, #f2a63a 26%, transparent);
+  color: #f2a63a;
+  animation-duration: 1.2s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bst-accessory {
+    animation: none;
+  }
+}
