@@ -139,7 +139,7 @@ export default async function plugin(bb: BbPluginApi) {
       label: "Threads on the stage",
       description:
         "How many threads the stage carries (1-24). The sidebar peek shows " +
-        "three lanes and scrolls for the rest; the full page shows them all.",
+        "a scrolling module; the full page shows them all.",
       // Validated at the boundary rather than clamped after the fact, so an
       // out-of-range value is rejected where the user typed it.
       experimental_schema: z.number().int().min(1).max(MAX_ROWS),
@@ -153,17 +153,11 @@ export default async function plugin(bb: BbPluginApi) {
     },
     peekLanes: {
       type: "number",
-      label: "Lanes in the sidebar peek",
+      label: "Lanes in the sidebar module",
       description:
-        "How many bots the sidebar peek and the floating monitor show before they scroll (2-10).",
+        "How many bots the sidebar module and floating monitor show before scrolling (2-10), subject to available screen space.",
       experimental_schema: z.number().int().min(2).max(10),
       default: 5,
-    },
-    peekOnHover: {
-      type: "boolean",
-      label: "Peek on hover",
-      description: "Open the stage when the pointer rests on its footer button.",
-      default: true,
     },
   });
   let config = await settings.get();

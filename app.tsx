@@ -1,8 +1,8 @@
 // bb-plugin-bot-stage — frontend: the adapter between BB and the stage.
 //
 // Three surfaces share one stage:
-//   * a disclosure in the sidebar footer (hover to peek, click to keep),
-//   * a floating monitor you can drag anywhere, popped out of that disclosure,
+//   * a persistent module between sidebar navigation and the Bots list,
+//   * a floating monitor you can drag anywhere, popped out of that module,
 //   * a full page, where every bot gets room.
 //
 // Data comes from three places and is merged here:
@@ -31,15 +31,13 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import type {
   ExperimentalProviderIconProps,
-  ExperimentalSidebarFooterDisclosureController,
-  ExperimentalSidebarFooterDisclosureProps,
+  ExperimentalSidebarNavigationProps,
   PluginProvidersState,
   PluginSidebarProject,
   PluginSidebarThread,
 } from "@get-bb/plugin-sdk/app";
 import type { Bot as WireBot, rpcContract } from "./contract";
 import { EMPTY_FRAME, fleetFrameSchema, STAGE_CHANNEL, type FleetFrame, type FleetRow } from "./lib/fleet";
-import { installHoverPeek } from "./lib/peek";
 import { clampWithin, measurePanel, type Offset } from "./lib/popout";
 import { guestBot, toStageBot } from "./stage/cast";
 import { useNow } from "./stage/hooks";
@@ -49,9 +47,6 @@ import { Panel } from "./stage/Panel";
 import "./app.css";
 
 const PLUGIN_ID = "bot-stage";
-const FOOTER_ID = "stage";
-const TRIGGER_SELECTOR = `[data-testid^="plugin-sidebar-footer-item-${PLUGIN_ID}-${FOOTER_ID}"], [id^="plugin-sidebar-footer-trigger-${PLUGIN_ID}-${FOOTER_ID}-"]`;
-const PANEL_SELECTOR = `[data-testid^="plugin-sidebar-footer-disclosure-${PLUGIN_ID}-${FOOTER_ID}"]`;
 
 const POPOUT_OFFSET_KEY = "bb-plugin-bot-stage:popout-offset";
 const DISMISSED_KEY = "bb-plugin-bot-stage:dismissed";
@@ -447,16 +442,14 @@ function LiveStage({ variant, title, floating, onClose, onPopout, onDragStart, o
   );
 }
 
-function StagePeek({ dismiss: close }: ExperimentalSidebarFooterDisclosureProps) {
+function StageSidebar({ experimental_Original: Original }: ExperimentalSidebarNavigationProps) {
   return (
-    <LiveStage
-      variant="compact"
-      onClose={close}
-      onPopout={() => {
-        popoutStore.set(true);
-        close();
-      }}
-    />
+    <>
+      <Original />
+      <section className="bst-sidebar-module" aria-label="Bot Stage" data-testid="bot-stage-sidebar">
+        <LiveStage variant="compact" onPopout={() => popoutStore.set(true)} />
+      </section>
+    </>
   );
 }
 
@@ -525,7 +518,7 @@ function writeOffset(offset: Offset): void {
 
 type DragState = { startX: number; startY: number; originX: number; originY: number };
 
-/** App-wide draggable monitor, opened from the footer peek's pop-out button. */
+/** App-wide draggable monitor, opened from the sidebar module's pop-out button. */
 function PopoutStage() {
   const workspace = useUiSize("workspace");
   const details = useUiSize("details");
@@ -648,41 +641,16 @@ function PopoutStage() {
   );
 }
 
-/**
- * Hover peek: resting the pointer on the footer row opens the stage, and
- * moving away closes it again — until the user clicks, which makes it stay.
- */
-function HoverPeek({ controller }: { controller: ExperimentalSidebarFooterDisclosureController }) {
-  const settings = useSettings();
-  const enabled = settings.values?.peekOnHover !== false;
-  useEffect(() => {
-    if (!enabled) return;
-    return installHoverPeek({
-      triggerSelector: TRIGGER_SELECTOR,
-      panelSelector: PANEL_SELECTOR,
-      open: () => controller.open(),
-      close: () => controller.close(),
-    });
-  }, [controller, enabled]);
-  return null;
-}
-
 export default definePluginApp((app) => {
-  const controller = app.experimental_sidebarFooter.register({
-    kind: "disclosure",
-    id: FOOTER_ID,
-    label: "Bot Stage — watch your bots work",
-    icon: "Bot",
-    component: StagePeek,
+  app.slots.experimental_sidebarNavigation({
+    id: "navigation",
+    title: "Bot Stage",
+    description: "Standard navigation with a persistent Bot Stage module above the thread list.",
+    component: StageSidebar,
   });
   app.slots.experimental_appOverlay({
     id: "peek-and-popout",
-    component: () => (
-      <>
-        <HoverPeek controller={controller} />
-        <PopoutStage />
-      </>
-    ),
+    component: PopoutStage,
   });
   app.slots.navPanel({
     id: "stage",

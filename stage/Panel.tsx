@@ -1,12 +1,12 @@
 // bb-plugin-bot-stage — the stage with its title bar: what the sidebar peek,
 // the floating monitor and the full page all show.
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { useUiSize } from "../lib/ui-size";
 import { Options } from "./Options";
 import { Close, PopOut } from "./glyphs";
 import { Stage } from "./Stage";
-import { SIZES, type LaneModel, type Variant } from "./model";
+import { type LaneModel, type Variant } from "./model";
 
 export interface PanelProps {
   lanes: readonly LaneModel[];
@@ -32,7 +32,6 @@ export function Panel(props: PanelProps) {
   const { lanes, variant, floating = false } = props;
   const workspace = useUiSize("workspace");
   const details = useUiSize("details");
-  const laneScale = Math.max(workspace, details) / 100;
   const working = lanes.filter((lane) => lane.row.busy).length;
   const needed = lanes.filter((lane) => lane.waiting).length;
   const files = lanes.reduce((total, lane) => total + lane.row.files.length, 0);
@@ -41,23 +40,31 @@ export function Panel(props: PanelProps) {
   // twenty behind an auto-hiding scrollbar looks like the whole fleet.
   const list = useRef<HTMLUListElement | null>(null);
   const [more, setMore] = useState(false);
+  const [listCap, setListCap] = useState<number>();
+  const visibleLanes = props.visibleLanes ?? 5;
+  const laneIds = lanes.map((lane) => lane.row.id).join(",");
   const measure = useCallback(() => {
     const element = list.current;
     if (element === null) return;
+    const visible = Array.from(element.children).slice(0, visibleLanes) as HTMLElement[];
+    const last = visible.at(-1);
+    const height = last === undefined ? 0 : last.offsetTop + last.offsetHeight - (visible[0]?.offsetTop ?? 0);
+    setListCap(height > 0 ? height : undefined);
     setMore(element.scrollHeight - element.scrollTop - element.clientHeight > 4);
-  }, []);
-  useEffect(measure, [measure, lanes.length, workspace, details]);
-
-  // As tall as the bots on it, up to a cap: a stage of two should not leave
-  // room for five. Tall enough for one even when empty, so the empty message fits.
-  const fixedHeight =
-    variant === "compact"
-      ? SIZES.compact.height * laneScale * Math.max(1, Math.min(props.visibleLanes ?? 5, lanes.length))
-      : undefined;
+  }, [visibleLanes]);
+  useLayoutEffect(() => {
+    measure();
+    const element = list.current;
+    if (element === null || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    for (const child of element.children) observer.observe(child);
+    return () => observer.disconnect();
+  }, [measure, laneIds, workspace, details]);
 
   return (
     <div className="bst-panel" data-floating={floating} data-variant={variant}
-      style={{ "--bst-workspace-scale": workspace / 100, "--bst-details-scale": details / 100, "--bst-lane-scale": laneScale } as CSSProperties}>
+      style={{ "--bst-workspace-scale": workspace / 100, "--bst-details-scale": details / 100 } as CSSProperties}>
       <header
         className="bst-bar"
         data-draggable={floating}
@@ -125,7 +132,7 @@ export function Panel(props: PanelProps) {
         listRef={list}
         onScroll={measure}
         className={`${more ? "bst-fade-bottom" : ""} ${floating ? "bst-floating-list" : ""}`}
-        style={fixedHeight === undefined ? undefined : { height: fixedHeight }}
+        style={variant === "compact" && listCap !== undefined ? { maxHeight: listCap } : undefined}
         empty={
           <p className="bst-empty">
             {props.stale

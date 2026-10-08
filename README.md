@@ -5,7 +5,7 @@ recent replies, and an original pixel-art workspace for each conversation.
 
 ## Features
 
-- Peek at the stage from the sidebar, open the full page, or use a draggable
+- Keep the stage visible as a sidebar module, open the full page, or use a draggable
   floating monitor.
 - See each thread's status, current activity, and recent assistant replies.
 - Use bot identities and avatars from the Bots Sidebar plugin, with fallback
@@ -23,6 +23,12 @@ bb plugin install https://github.com/ElijahFitzgeraldTuttle/bb-plugin-bot-stage
 
 Open **Bot Stage** from BB's sidebar. Install Bots Sidebar to use your existing
 bot identities and avatars.
+
+Select **Bot Stage** under **Settings → Appearance → Navigation** to keep the
+stage mounted below standard navigation and above your thread list. BB saves
+that choice across reloads. Cards fit their contents and keep both sides centered.
+The clear checkmark is always visible; it becomes available when a thread is
+finished and is no longer waiting on you.
 
 Use the **… options** button in the stage header to adjust **Workspace size**
 (pixel workspace and bot) and **Details size** (the text and controls to its

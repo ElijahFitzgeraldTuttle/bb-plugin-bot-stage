@@ -124,7 +124,6 @@ export function Lane({ model, variant, workspaceScale, index, entering, leaving,
     "--bot": bot.avatar.color,
     "--glow": glowOf(bot, 0.38),
     "--glow-soft": glowOf(bot, 0.16),
-    "--lane-h": `${size.height}px`,
     "--lines": size.lines,
     "--font": `${size.font}px`,
     "--delay": `${index * 70}ms`,
@@ -144,8 +143,9 @@ export function Lane({ model, variant, workspaceScale, index, entering, leaving,
       data-leaving={leaving}
       style={style}
     >
-      <Workspace scene={model.workspace ?? null} />
-      <ActorCanvas
+      <div className="bst-scene">
+        <Workspace scene={model.workspace ?? null} />
+        <ActorCanvas
         bot={bot}
         k={size.actor.k * workspaceScale}
         anchor={size.actor.anchor}
@@ -155,7 +155,8 @@ export function Lane({ model, variant, workspaceScale, index, entering, leaving,
         input={input}
         label={label}
         onActivate={(split) => onOpen(row.id, split)}
-      />
+        />
+      </div>
 
       <div className="bst-talk">
         <header className="bst-head">
@@ -185,12 +186,13 @@ export function Lane({ model, variant, workspaceScale, index, entering, leaving,
               {model.helpers > 1 ? model.helpers : null}
             </span>
           ) : null}
-          {onDismiss !== undefined && !busy && !model.waiting ? (
+          {onDismiss !== undefined ? (
             <button
               type="button"
               className="bst-dismiss"
               aria-label={`Dismiss ${model.title}`}
-              title="Dismiss until it works again"
+              title={busy || model.waiting ? "Clear when this thread finishes" : "Clear until it works again"}
+              disabled={busy || model.waiting}
               onClick={() => onDismiss(row.id)}
             >
               <Check />

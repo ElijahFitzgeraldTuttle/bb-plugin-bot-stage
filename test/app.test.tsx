@@ -136,11 +136,12 @@ afterEach(() => {
 type Options = Parameters<typeof renderSlot>[2];
 
 function peek(options: Options) {
-  const item = app.experimentalSidebarFooterItems.find(
-    (candidate) => candidate.id === "stage" && candidate.kind === "disclosure",
-  );
-  if (item === undefined || item.kind !== "disclosure") throw new Error("Bot Stage registered no footer disclosure");
-  const slot = renderSlot({ component: item.component }, { dismiss: () => {} }, options);
+  const item = app.experimentalSidebarNavigations.find((candidate) => candidate.id === "navigation");
+  if (item === undefined) throw new Error("Bot Stage registered no sidebar module");
+  const slot = renderSlot({ component: item.component }, {
+    isCompactViewport: false,
+    experimental_Original: () => <nav aria-label="Standard navigation" />,
+  }, options);
   mounted.push(slot);
   return slot;
 }
@@ -173,13 +174,21 @@ const ready = (threads: PluginSidebarThread[] = [thread()], projects = [project(
 });
 
 describe("registrations", () => {
-  it("adds a footer disclosure, a page, and one app-wide overlay", () => {
-    const [item] = app.experimentalSidebarFooterItems;
-    expect(item?.kind).toBe("disclosure");
-    expect(item?.label).toContain("Bot Stage");
-    expect(item?.icon).toBe("Bot");
+  it("adds a persistent sidebar module, a page, and one app-wide overlay", () => {
+    expect(app.experimentalSidebarFooterItems).toEqual([]);
+    expect(app.experimentalSidebarNavigations.map((item) => item.id)).toEqual(["navigation"]);
     expect(app.navPanels.map((panel) => panel.path)).toEqual(["stage"]);
     expect(app.appOverlays.map((entry) => entry.id)).toEqual(["peek-and-popout"]);
+  });
+
+  it("keeps the standard navigation and stays visible after outside clicks and Escape", async () => {
+    const slot = peek({ rpc: rpc(), sidebarThreads: ready() });
+    expect(slot.getByRole("navigation", { name: "Standard navigation" })).toBeTruthy();
+    await slot.findByText("Fix the flaky test");
+    fireEvent.pointerDown(document.body);
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(slot.getByTestId("bot-stage-sidebar")).toBeTruthy();
+    expect(slot.queryByRole("button", { name: "Close Bot Stage" })).toBeNull();
   });
 });
 
@@ -377,10 +386,13 @@ describe("quiet bots", () => {
     expect(JSON.parse(window.localStorage.getItem("bb-plugin-bot-stage:dismissed") ?? "[]")).toEqual(["thr_a"]);
   });
 
-  it("do not get a dismiss button while they are working", async () => {
+  it("keeps the clear control visible but disabled while they are working", async () => {
     const slot = peek({ rpc: rpc(), sidebarThreads: ready() });
     await slot.findByText("Fix the flaky test");
-    expect(slot.queryByRole("button", { name: /Dismiss/ })).toBeNull();
+    const clear = slot.getByRole("button", { name: /Dismiss/ }) as HTMLButtonElement;
+    expect(clear.disabled).toBe(true);
+    fireEvent.click(clear);
+    expect(slot.getByText("Fix the flaky test")).toBeTruthy();
   });
 
   it("come back when the thread works again", async () => {

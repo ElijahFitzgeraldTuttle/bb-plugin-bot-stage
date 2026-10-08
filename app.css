@@ -48,6 +48,7 @@
 
 .bst-bar {
   display: flex;
+  flex-shrink: 0;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
@@ -223,6 +224,7 @@
   list-style: none;
   margin: 0;
   padding: 0;
+  min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
@@ -259,6 +261,7 @@
 
 .bst-list[data-variant="roomy"] {
   display: grid;
+  align-items: start;
   grid-template-columns: repeat(auto-fill, minmax(min(100%, calc(150px * var(--bst-workspace-scale, 1) + 230px * var(--bst-details-scale, 1))), 1fr));
   gap: 10px;
   overflow: visible;
@@ -274,8 +277,7 @@
   align-items: center;
   gap: 4px;
   box-sizing: border-box;
-  height: calc(var(--lane-h) * var(--bst-lane-scale, 1));
-  max-height: calc(var(--lane-h) * var(--bst-lane-scale, 1));
+  height: auto;
   padding: 4px 8px 4px 2px;
   border: 1px solid transparent;
   border-radius: 14px;
@@ -334,14 +336,21 @@
   cursor: grabbing;
 }
 
+/* The scene takes up real layout space so each card fits its larger side. */
+.bst-scene {
+  position: relative;
+  flex: none;
+  width: calc(128px * var(--bst-workspace-scale, 1));
+  height: calc(128px * var(--bst-workspace-scale, 1));
+}
+
 /* The room stays behind the original bot and all of its drawn expressions. */
 .bst-workspace {
   position: absolute;
-  left: 1px;
-  top: calc(50% - 64px * var(--bst-workspace-scale, 1));
+  inset: 0;
   box-sizing: border-box;
-  width: calc(128px * var(--bst-workspace-scale, 1));
-  height: calc(128px * var(--bst-workspace-scale, 1));
+  width: 100%;
+  height: 100%;
   z-index: 0;
   pointer-events: none;
 }
@@ -361,26 +370,17 @@
 .bst-lane[data-variant="compact"] .bst-actor {
   position: absolute;
   left: calc(5px * var(--bst-workspace-scale, 1));
-  top: calc(50% - 11px * var(--bst-workspace-scale, 1));
-  bottom: auto;
-}
-
-.bst-lane[data-variant="compact"] .bst-talk {
-  margin-left: calc(132px * var(--bst-workspace-scale, 1) / var(--bst-details-scale, 1));
-}
-
-.bst-lane[data-variant="roomy"] .bst-workspace {
-  left: 12px;
+  bottom: calc(5px * var(--bst-workspace-scale, 1));
 }
 
 .bst-lane[data-variant="roomy"] .bst-actor {
   position: absolute;
-  left: 4px;
-  top: calc(50% - 63px * var(--bst-workspace-scale, 1));
+  left: calc(-8px * var(--bst-workspace-scale, 1));
+  bottom: calc(3px * var(--bst-workspace-scale, 1));
 }
 
-.bst-lane[data-variant="roomy"] .bst-talk {
-  margin-left: calc((146px * var(--bst-workspace-scale, 1) + 4px) / var(--bst-details-scale, 1));
+.bst-lane[data-variant="roomy"] .bst-scene {
+  margin-right: calc(18px * var(--bst-workspace-scale, 1));
 }
 
 .bst-talk {
@@ -568,13 +568,13 @@
   border-radius: 5px;
   font-size: 10px;
   color: var(--bst-muted);
-  opacity: 0;
+  opacity: 1;
   transition: opacity 0.2s, background-color 0.2s, color 0.2s;
 }
 
-.bst-lane:hover .bst-dismiss,
-.bst-dismiss:focus-visible {
-  opacity: 1;
+.bst-dismiss:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 
 .bst-dismiss:hover {
@@ -907,7 +907,24 @@
 
 /* The list tracks the number of bots: it grows and shrinks, softly. */
 .bst-list[data-variant="compact"] {
-  transition: height 0.3s var(--bst-ease);
+  transition: max-height 0.3s var(--bst-ease);
+}
+
+.bst-sidebar-module {
+  min-height: 0;
+  max-height: min(420px, 42vh);
+  margin: 4px 0;
+  border-block: 1px solid var(--sidebar-border, var(--border, #8884));
+}
+
+.bst-sidebar-module > .bst-panel {
+  max-height: inherit;
+  box-sizing: border-box;
+}
+
+.bst-popout > .bst-panel {
+  max-height: calc(100vh - 2rem);
+  box-sizing: border-box;
 }
 
 /* ------------------------------------------------------------------ *
@@ -992,14 +1009,10 @@
   60% {
     opacity: 0;
     transform: translateX(26px) scale(0.97);
-    max-height: calc(var(--lane-h) * var(--bst-lane-scale, 1));
   }
   100% {
     opacity: 0;
     transform: translateX(26px) scale(0.97);
-    max-height: 0;
-    padding-block: 0;
-    border-width: 0;
   }
 }
 
