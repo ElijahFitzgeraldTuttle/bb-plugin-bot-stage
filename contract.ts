@@ -27,6 +27,14 @@ export const ownersSchema = z.object({
   workspaces: z.record(z.string(), workspaceSchema.nullable()).optional(),
 });
 
+/** Where a new thread with one bot starts: its owned project, else personal. */
+export const launchTargetSchema = z.object({
+  botId: z.string(),
+  projectId: z.string(),
+  /** A NewThreadRequest["environment"]; the composer validates it, not us. */
+  environment: z.record(z.string(), z.json()),
+});
+
 export const rpcContract = defineRpcContract({
   workspace_save: {
     input: workspaceSaveSchema.extend({ threadId: z.string().min(1).max(64) }),
@@ -45,6 +53,25 @@ export const rpcContract = defineRpcContract({
       .strict(),
     output: fleetFrameSchema,
   },
+  /** The bots a new thread can be started with, in the Bots panel's order. */
+  launch_bots: {
+    input: z.object({}).strict(),
+    output: z.object({
+      bots: z.array(botSchema),
+      /** Bot id to the threads filed under it (its main thread included). */
+      threads: z.record(z.string(), z.array(z.string())),
+    }),
+  },
+  /** Prepare a bot's private state and say where its new thread should start. */
+  launch_prepare: {
+    input: z.object({ botId: z.string().min(1).max(100) }).strict(),
+    output: launchTargetSchema,
+  },
+  /** Create the thread from the composer's request, filed under the bot. */
+  launch_create: {
+    input: z.object({ botId: z.string().min(1).max(100), request: z.record(z.string(), z.json()) }).strict(),
+    output: z.object({ threadId: z.string() }),
+  },
   /** Which bot owns each thread, and what it looks like. */
   owners: {
     input: z.object({ threadIds: z.array(z.string().min(1).max(64)).max(100) }),
@@ -52,6 +79,7 @@ export const rpcContract = defineRpcContract({
   },
 });
 
+export type LaunchTarget = z.infer<typeof launchTargetSchema>;
 export type Bot = z.infer<typeof botSchema>;
 export type BotAvatar = z.infer<typeof avatarSchema>;
 export type Owners = z.infer<typeof ownersSchema>;

@@ -1,7 +1,7 @@
 import type { Bot, Work } from './types';
 import type { Drop, SoftBody } from './softbody';
 export const SIZE=112.5;
-const BODY_UNIT_PX=9.375; // Original 6.25-unit silhouette × 1.5, independent of block pitch.
+export const BODY_UNIT_PX=9.375; // Original 6.25-unit silhouette × 1.5, independent of block pitch.
 export const PIXEL=7.94; // ~15% bigger blocks for ~25% fewer of them; eyes stay the same size.
 /** Everything drawn is multiplied by view.k: 1 on desktop, smaller on phones. */
 export const view = { k: 1 };
@@ -162,7 +162,7 @@ export function drawDrops(ctx: CanvasRenderingContext2D, drops: Drop[], color: s
 export type Mood = 'idle' | 'watching' | 'thinking' | 'talking' | 'working' | 'needs' | 'done' | 'failed' | 'sleeping' | 'held';
 export type Expression = 'base' | 'dot' | 'wide' | 'narrow' | 'happy' | 'blink' | 'lookL' | 'lookR' | 'lookUp' | 'surprised' | 'focused' | 'up';
 
-const EYES: Record<string, string[]> = {
+export const EYES: Record<string, string[]> = {
   dot: ['##', '##'],
   wide: ['.##.', '####', '####', '.##.'],
   narrow: ['####'],

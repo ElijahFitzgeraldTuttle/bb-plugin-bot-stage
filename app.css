@@ -43,6 +43,7 @@
   flex-direction: column;
   gap: 2px;
   padding: 6px;
+  min-width: 0;
   min-height: 0;
 }
 
@@ -203,7 +204,8 @@
 .bst-count:focus-visible,
 .bst-title:focus-visible,
 .bst-bubble:focus-visible,
-.bst-dismiss:focus-visible {
+.bst-dismiss:focus-visible,
+.bst-lane-pin:focus-visible {
   outline: 1px solid var(--bst-muted);
   outline-offset: 1px;
 }
@@ -221,10 +223,14 @@
  * ------------------------------------------------------------------ */
 
 .bst-list {
+  /* Keep lane measurements relative to this list when the sidebar moves. */
+  position: relative;
   list-style: none;
   margin: 0;
   padding: 0;
   min-height: 0;
+  min-width: 0;
+  overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
@@ -240,10 +246,11 @@
   border-radius: 9999px;
 }
 
-/* The sidebar peek is a fixed-height monitor on purpose: BB animates the
- * disclosure's height, so a list that grew and shrank would fight it. */
+/* Pack lanes at the top; only the list scrolls when the sidebar is capped. */
 .bst-list[data-variant="compact"] {
-  display: block;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
 }
 
 .bst-floating-list {
@@ -274,10 +281,13 @@
 .bst-lane {
   position: relative;
   display: flex;
+  flex: none;
+  flex-wrap: wrap;
   align-items: center;
   gap: 4px;
   box-sizing: border-box;
   height: auto;
+  min-width: 0;
   padding: 4px 8px 4px 2px;
   border: 1px solid transparent;
   border-radius: 14px;
@@ -353,6 +363,8 @@
   height: 100%;
   z-index: 0;
   pointer-events: none;
+  border-radius: 12px;
+  overflow: hidden;
 }
 
 .bst-workspace canvas {
@@ -364,7 +376,6 @@
 
 .bst-workspace[data-state="pending"] {
   border: 1px solid var(--bst-line);
-  border-radius: 3px;
 }
 
 .bst-lane[data-variant="compact"] .bst-actor {
@@ -470,7 +481,8 @@
  * ------------------------------------------------------------------ */
 
 .bst-talk {
-  flex: 1;
+  /* Move below the workspace before enlarged details become unreadable. */
+  flex: 1 1 140px;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -509,7 +521,11 @@
 }
 
 .bst-badge {
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   padding: 1px 5px;
   border-radius: 999px;
   font: 600 8.5px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -570,6 +586,51 @@
   color: var(--bst-muted);
   opacity: 1;
   transition: opacity 0.2s, background-color 0.2s, color 0.2s;
+}
+
+.bst-lane-pin {
+  all: unset;
+  box-sizing: border-box;
+  cursor: pointer;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 5px;
+  color: var(--bst-muted);
+  opacity: 0;
+  transition: opacity 0.2s, background-color 0.2s, color 0.2s;
+}
+
+.bst-lane-pin svg {
+  width: 11px;
+  height: 11px;
+}
+
+.bst-lane:hover .bst-lane-pin,
+.bst-lane-pin:focus-visible,
+.bst-lane-pin[aria-pressed="true"] {
+  opacity: 1;
+}
+
+.bst-lane-pin:hover {
+  background: var(--bst-hover);
+  color: var(--bst-fg);
+}
+
+.bst-lane-pin[aria-pressed="true"] {
+  color: var(--bst-pin, #ffb454);
+}
+
+.bst-lane-pin[aria-pressed="true"] svg {
+  fill: currentColor;
+}
+
+@media (pointer: coarse) {
+  .bst-lane-pin {
+    opacity: 1;
+  }
 }
 
 .bst-dismiss:disabled {
@@ -781,7 +842,8 @@
 }
 
 .bst-file {
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
   max-width: 9em;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -851,7 +913,7 @@
 }
 
 .bst-lane[data-variant="compact"] .bst-name {
-  flex: none;
+  flex: 0 1 auto;
   max-width: 6.5em;
   font-size: 10.5px;
 }
@@ -911,14 +973,21 @@
 }
 
 .bst-sidebar-module {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
   min-height: 0;
-  max-height: min(420px, 42vh);
+  box-sizing: border-box;
+  overflow: hidden;
   margin: 4px 0;
   border-block: 1px solid var(--sidebar-border, var(--border, #8884));
+  border-bottom: 0;
 }
 
+/* The module has no height cap of its own: the lane list is capped (see Panel),
+   so opening the threads menu only adds height below the lanes and never
+   resizes anything above it. */
 .bst-sidebar-module > .bst-panel {
-  max-height: inherit;
   box-sizing: border-box;
 }
 
@@ -1209,5 +1278,298 @@ html[data-calm] .bst-tool svg {
 @media (prefers-reduced-motion: reduce) {
   .bst-accessory {
     animation: none;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Starting a thread: the bot rail and its composer
+ * ------------------------------------------------------------------ */
+
+.bst-spawn {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 4px;
+  min-width: 0;
+}
+
+.bst-rail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  padding: 3px 4px;
+  border: 1px dashed var(--bst-line);
+  border-radius: 11px;
+}
+
+.bst-rail-bot {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 52px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+.bst-rail-bot:hover {
+  background: var(--bst-hover);
+}
+
+.bst-rail-bot[aria-pressed="true"] {
+  border-color: var(--bst-fg);
+  background: var(--bst-hover);
+}
+
+.bst-rail-bot:focus-visible {
+  outline: 2px solid var(--bst-fg);
+  outline-offset: 1px;
+}
+
+.bst-rail-dot {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 8px;
+  height: 8px;
+  border: 2px solid var(--bst-bg);
+  border-radius: 99px;
+  background: var(--bst-ok);
+}
+
+.bst-rail-dot[data-state="needs"] {
+  background: var(--bst-ask);
+}
+
+.bst-pixel {
+  display: block;
+}
+
+.bst-compose {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--bst-line);
+  border-radius: 11px;
+  background: var(--bst-bg);
+  min-width: 0;
+}
+
+.bst-compose-to {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--bst-muted);
+  font-size: 11.5px;
+}
+
+.bst-compose-to b {
+  color: var(--bst-fg);
+}
+
+.bst-compose-to .bst-icon {
+  margin-left: auto;
+}
+
+.bst-compose-note {
+  margin: 0;
+  color: var(--bst-muted);
+  font-size: 11.5px;
+}
+
+.bst-compose-note[data-bad] {
+  color: var(--bst-bad);
+}
+/* ------------------------------------------------------------------ *
+ * Threads drop-down: pinned and recent
+ * ------------------------------------------------------------------ */
+
+.bst-threads {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  margin-top: 4px;
+  border-top: 1px solid var(--bst-line);
+}
+
+.bst-threads-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--bst-muted);
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.bst-threads-head:hover {
+  background: var(--bst-hover);
+  color: var(--bst-fg);
+}
+
+.bst-threads-chevron {
+  margin-left: auto;
+  transition: transform 0.15s;
+}
+
+.bst-threads-head[aria-expanded="true"] .bst-threads-chevron {
+  transform: rotate(180deg);
+}
+
+/* Grows from nothing: a grid row animating 0fr to 1fr needs no known height. */
+.bst-threads-reveal {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition: grid-template-rows 0.22s ease, opacity 0.18s ease;
+}
+
+.bst-threads-reveal[data-shown="true"] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.bst-threads-clip {
+  min-height: 0;
+  overflow: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bst-threads-reveal,
+  .bst-threads-chevron {
+    transition: none;
+  }
+}
+
+.bst-threads-body {
+  min-height: 0;
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 0 2px 4px;
+}
+
+.bst-threads-label {
+  margin: 6px 6px 2px;
+  color: var(--bst-muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.bst-threads-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bst-threads-empty {
+  margin: 4px 6px;
+  color: var(--bst-muted);
+}
+
+.bst-thread {
+  position: relative;
+  display: flex;
+  align-items: center;
+  border-radius: 8px;
+}
+
+.bst-thread:hover,
+.bst-thread[data-current="true"] {
+  background: var(--bst-hover);
+}
+
+.bst-thread-open {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 4px 6px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.bst-thread-who {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 30px;
+}
+
+.bst-thread-anon {
+  width: 8px;
+  height: 8px;
+  border-radius: 99px;
+  background: var(--bst-line);
+}
+
+.bst-thread-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bst-thread-age {
+  flex: none;
+  color: var(--bst-muted);
+  font-size: 10.5px;
+}
+
+.bst-thread-pin {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  margin-right: 2px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--bst-muted);
+  opacity: 0;
+  cursor: pointer;
+}
+
+.bst-thread:hover .bst-thread-pin,
+.bst-thread-pin:focus-visible,
+.bst-thread-pin[aria-pressed="true"] {
+  opacity: 1;
+}
+
+.bst-thread-pin[aria-pressed="true"] {
+  color: var(--bst-pin, #ffb454);
+}
+
+.bst-thread-pin[aria-pressed="true"] svg {
+  fill: currentColor;
+}
+
+@media (pointer: coarse) {
+  .bst-thread-pin {
+    opacity: 1;
   }
 }

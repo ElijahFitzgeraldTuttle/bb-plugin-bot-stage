@@ -135,9 +135,15 @@ export interface Leaving<T> {
  * Keeps an item on the list for a moment after it leaves, flagged, so its
  * lane can animate out instead of vanishing. Items that come back before the
  * exit finishes are simply un-flagged.
+ *
+ * `items` is a new array on every tick of the stage's clock, so nothing here
+ * may depend on it staying put during an exit: each departed item carries its
+ * own expiry, and a timer that follows the departed set (not `items`) sweeps
+ * them. A timer owned by the `items` effect was cleared by the next tick, and
+ * the lane stayed on as an invisible ghost holding its height open.
  */
 export function useExitList<T extends { id: string }>(items: readonly T[], exitMs: number): Leaving<T>[] {
-  const [gone, setGone] = useState<Map<string, { item: T; index: number }>>(() => new Map());
+  const [gone, setGone] = useState<Map<string, { item: T; index: number; until: number }>>(() => new Map());
   const previous = useRef<readonly T[]>(items);
 
   useEffect(() => {
@@ -148,26 +154,31 @@ export function useExitList<T extends { id: string }>(items: readonly T[], exitM
     });
     previous.current = items;
     if (left.length === 0 && gone.size === 0) return;
+    const until = Date.now() + exitMs;
     setGone((current) => {
       const next = new Map(current);
       for (const id of now) next.delete(id);
-      for (const entry of left) if (!next.has(entry.item.id)) next.set(entry.item.id, entry);
+      for (const entry of left) if (!next.has(entry.item.id)) next.set(entry.item.id, { ...entry, until });
       return next.size === current.size && [...next.keys()].every((id) => current.has(id)) ? current : next;
     });
-    const timers = left.map((entry) =>
-      setTimeout(() => {
-        setGone((current) => {
-          if (!current.has(entry.item.id)) return current;
-          const next = new Map(current);
-          next.delete(entry.item.id);
-          return next;
-        });
-      }, exitMs),
-    );
-    return () => timers.forEach(clearTimeout);
   // `gone` is read only to skip no-op updates; the effect is driven by `items`.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items, exitMs]);
+
+  // One timer, for the soonest exit. It removes exactly the entries that were
+  // due when it was set, so a clock that fires a hair early cannot strand one.
+  useEffect(() => {
+    if (gone.size === 0) return;
+    const soonest = Math.min(...[...gone.values()].map((entry) => entry.until));
+    const timer = setTimeout(() => {
+      setGone((current) => {
+        const next = new Map(current);
+        for (const [id, entry] of current) if (entry.until <= soonest) next.delete(id);
+        return next;
+      });
+    }, Math.max(0, soonest - Date.now()));
+    return () => clearTimeout(timer);
+  }, [gone]);
 
   return useMemo(() => {
     const out: Leaving<T>[] = items.map((item) => ({ item, leaving: false }));

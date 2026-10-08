@@ -112,7 +112,7 @@ describe("registration", () => {
   it("offers a snapshot and the cast, runs one service, and has no command line", async () => {
     await load([command(1, "i1", "npm test")]);
     const { registrations } = host.harness.inspection;
-    expect([...registrations.rpcMethods].sort()).toEqual(["owners", "stage_snapshot", "workspace_save"]);
+    expect([...registrations.rpcMethods].sort()).toEqual(["launch_bots", "launch_create", "launch_prepare", "owners", "stage_snapshot", "workspace_save"]);
     expect(registrations.services.map((service) => service.name)).toContain("stage-frame");
     expect(registrations.cli).toBeNull();
   });
@@ -217,6 +217,10 @@ describe("owners", () => {
         name: "BB Architect",
         mainThreadId: "thr_main",
         avatar: { color: "#7ccf9a", shape: "round", expression: "happy", motion: "float" },
+        hostId: "host_1",
+        order: 1,
+        hiddenUntilActivity: false,
+        linkedProjectIds: ["proj_work"],
         soul: "private",
         memory: "private",
       },
@@ -225,16 +229,36 @@ describe("owners", () => {
         name: "Coach",
         mainThreadId: null,
         avatar: { color: "#e8b04a", shape: "cloud", expression: "calm", motion: "still" },
+        hostId: "host_1",
+        order: 0,
+        hiddenUntilActivity: false,
+        linkedProjectIds: [],
+      },
+      {
+        id: "bot_h",
+        name: "Sleeper",
+        mainThreadId: null,
+        avatar: { color: "#999999", shape: "blob", expression: "calm", motion: "still" },
+        hostId: "host_1",
+        order: 2,
+        hiddenUntilActivity: true,
+        linkedProjectIds: [],
       },
     ],
+    personalProjectId: "proj_personal",
+    projects: [{ id: "proj_work" }],
+    projectOwners: [{ projectId: "proj_work", botId: "bot_a" }],
     threadBindings: [
       { threadId: "thr_bound", botId: "bot_b" },
       { threadId: "thr_orphan", botId: "bot_gone" },
     ],
   };
 
+  const botCalls: Array<{ method: string; input: unknown }> = [];
+
   async function loadOwners(parents: Record<string, string | null>) {
     reads.length = 0;
+    botCalls.length = 0;
     host = createFakePluginHost({
       pluginId: "bot-stage",
       sdk: {
@@ -247,7 +271,14 @@ describe("owners", () => {
               parentThreadId: parents[threadId] ?? null,
             })) as never,
         },
-        plugins: { callRpc: (async () => listing) as never },
+        plugins: {
+          callRpc: (async ({ method, input }: { method: string; input: unknown }) => {
+            botCalls.push({ method, input });
+            if (method === "bot_prepare") return { stateReady: true };
+            if (method === "conversation_create") return { threadId: "thr_new" };
+            return listing;
+          }) as never,
+        },
       },
     });
     await plugin(host.bb);
@@ -286,8 +317,69 @@ describe("owners", () => {
     expect(JSON.stringify(result)).not.toContain("private");
   });
 
+  it("re-reads a stale listing for a thread it has no owner for, so a new thread gets its bot", async () => {
+    await loadOwners({});
+    expect((await owners(["thr_fresh"])).owners.thr_fresh).toBeNull();
+    listing.threadBindings.push({ threadId: "thr_fresh", botId: "bot_a" });
+    const now = Date.now();
+    const clock = vi.spyOn(Date, "now").mockReturnValue(now + 3_000);
+    try {
+      expect((await owners(["thr_fresh"])).owners.thr_fresh).toBe("bot_a");
+    } finally {
+      clock.mockRestore();
+      listing.threadBindings.pop();
+    }
+  });
+
   it("survives a loop in the parent links", async () => {
     await loadOwners({ thr_x: "thr_y", thr_y: "thr_x" });
     expect((await owners(["thr_x"])).owners.thr_x).toBeNull();
+  });
+
+  describe("starting a thread", () => {
+    const call = (method: string, input: unknown) => host.harness.behavior.callRpc(method as never, input as never) as Promise<any>;
+
+    it("lists the bots in the Bots panel's order, without hidden ones", async () => {
+      await loadOwners({});
+      const { bots, threads } = await call("launch_bots", {});
+      expect(bots.map((bot: { id: string }) => bot.id)).toEqual(["bot_b", "bot_a"]);
+      expect(JSON.stringify(bots)).not.toContain("private");
+      expect(threads.bot_a).toEqual(["thr_main"]);
+      expect(threads.bot_b).toEqual(["thr_bound"]);
+    });
+
+    it("starts a bot that owns a work project in that project's checkout", async () => {
+      await loadOwners({});
+      expect(await call("launch_prepare", { botId: "bot_a" })).toEqual({
+        botId: "bot_a",
+        projectId: "proj_work",
+        environment: { type: "host", hostId: "host_1", workspace: { type: "unmanaged", path: null } },
+      });
+      expect(botCalls.map((entry) => entry.method)).toContain("bot_prepare");
+    });
+
+    it("starts a bot with no project of its own as a personal chat", async () => {
+      await loadOwners({});
+      expect(await call("launch_prepare", { botId: "bot_b" })).toEqual({
+        botId: "bot_b",
+        projectId: "proj_personal",
+        environment: { type: "host", hostId: "host_1", workspace: { type: "personal" } },
+      });
+    });
+
+    it("refuses a bot that does not exist", async () => {
+      await loadOwners({});
+      await expect(call("launch_prepare", { botId: "bot_gone" })).rejects.toThrow();
+    });
+
+    it("files the new thread under the bot through Bots Sidebar", async () => {
+      await loadOwners({});
+      const request = { projectId: "proj_work", model: "m" };
+      expect(await call("launch_create", { botId: "bot_a", request })).toEqual({ threadId: "thr_new" });
+      expect(botCalls.at(-1)).toEqual({
+        method: "conversation_create",
+        input: { botId: "bot_a", request, makeMain: false },
+      });
+    });
   });
 });

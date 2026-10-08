@@ -30,7 +30,7 @@
 // right character.
 //
 // The folding itself lives in lib/fleet.ts so it is testable without a server.
-import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import type { BbPluginApi, JsonValue } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import { avatarSchema, rpcContract, type Bot } from "./contract";
 import { createWorkspaces } from "./lib/workspaces-server";
@@ -106,6 +106,8 @@ const MAX_FEEDS = 80;
 const BOTS_PLUGIN_ID = "bots-sidebar";
 /** bots_list reads every bot's state files, so a listing is reused this long. */
 const LISTING_TTL_MS = 15_000;
+/** A thread with no owner re-reads a listing older than this, in case it is brand new. */
+const MISS_REFRESH_MS = 2_000;
 const BOTS_RPC_TIMEOUT_MS = 20_000;
 /** Deep enough for orchestrated work; a loop in parent links cannot spin forever. */
 const MAX_ANCESTORS = 12;
@@ -120,13 +122,32 @@ const listingSchema = z.object({
       name: z.string(),
       mainThreadId: z.string().nullable().optional(),
       avatar: avatarSchema,
+      hostId: z.string().optional(),
+      order: z.number().default(0),
+      hiddenUntilActivity: z.boolean().default(false),
+      linkedProjectIds: z.array(z.string()).default([]),
     }),
   ),
+  personalProjectId: z.string().optional(),
+  projects: z.array(z.object({ id: z.string() })).default([]),
+  projectOwners: z.array(z.object({ projectId: z.string(), botId: z.string() })).default([]),
   threadBindings: z.array(z.object({ threadId: z.string(), botId: z.string() })),
 });
 
+interface LaunchBot {
+  hostId: string | undefined;
+  order: number;
+  hidden: boolean;
+  linkedProjectIds: readonly string[];
+}
+
 interface BotListing {
   bots: Map<string, Bot>;
+  launch: Map<string, LaunchBot>;
+  personalProjectId: string | undefined;
+  /** Work projects (never personal or a legacy bot home). */
+  projectIds: ReadonlySet<string>;
+  projectOwners: ReadonlyArray<{ projectId: string; botId: string }>;
   /** Thread id to bot id, for threads bound directly (main threads included). */
   bindings: Map<string, string>;
 }
@@ -149,6 +170,13 @@ export default async function plugin(bb: BbPluginApi) {
       type: "boolean",
       label: "Keep finished threads on the stage",
       description: "Leave a bot on stage after its thread goes quiet, asleep.",
+      default: true,
+    },
+    hideBotsPanel: {
+      type: "boolean",
+      label: "Hide the Bots panel",
+      description:
+        "Bot Stage's bot strip replaces the Bots Sidebar's list. Turn this off to show that list again below the stage.",
       default: true,
     },
     peekLanes: {
@@ -722,6 +750,15 @@ export default async function plugin(bb: BbPluginApi) {
       await startWatching(threadIds);
       return frame(wallOrder);
     },
+    async launch_bots() {
+      return botDirectory.launchBots();
+    },
+    launch_prepare({ botId }) {
+      return botDirectory.prepare(botId);
+    },
+    launch_create({ botId, request }) {
+      return botDirectory.create(botId, request);
+    },
     async owners({ threadIds }) {
       return { ...await botDirectory.ownersOf(threadIds), workspaces: workspaces.readMany(threadIds) };
     },
@@ -794,13 +831,27 @@ function createBotDirectory(bb: BbPluginApi) {
       .then(
         (next) => {
           const bots = new Map<string, Bot>();
+          const launch = new Map<string, LaunchBot>();
           const bindings = new Map<string, string>();
           for (const bot of next.bots) {
             bots.set(bot.id, { id: bot.id, name: bot.name, avatar: bot.avatar });
+            launch.set(bot.id, {
+              hostId: bot.hostId,
+              order: bot.order,
+              hidden: bot.hiddenUntilActivity,
+              linkedProjectIds: bot.linkedProjectIds,
+            });
             if (bot.mainThreadId) bindings.set(bot.mainThreadId, bot.id);
           }
           for (const binding of next.threadBindings) bindings.set(binding.threadId, binding.botId);
-          listing = { bots, bindings };
+          listing = {
+            bots,
+            launch,
+            bindings,
+            personalProjectId: next.personalProjectId,
+            projectIds: new Set(next.projects.map((project) => project.id)),
+            projectOwners: next.projectOwners,
+          };
           fetchedAt = Date.now();
         },
         (error: unknown) => {
@@ -844,22 +895,92 @@ function createBotDirectory(bb: BbPluginApi) {
     return null;
   }
 
+  const callBots = <T>(method: string, input: Record<string, JsonValue>, outputSchema: z.ZodType<T>) =>
+    bb.sdk.plugins.callRpc({
+      pluginId: BOTS_PLUGIN_ID,
+      method,
+      input,
+      outputSchema,
+      signal: AbortSignal.timeout(BOTS_RPC_TIMEOUT_MS),
+    });
+
   return {
+    /**
+     * Bots a thread can start with, in the Bots panel's order (hidden ones stay
+     * hidden), and the threads filed directly under each.
+     */
+    async launchBots() {
+      const known = await currentListing();
+      if (known === null) return { bots: [] as Bot[], threads: {} as Record<string, string[]> };
+      const bots = [...known.bots.values()]
+        .filter((bot) => known.launch.get(bot.id)?.hidden !== true)
+        .sort((left, right) => (known.launch.get(left.id)?.order ?? 0) - (known.launch.get(right.id)?.order ?? 0));
+      const threads: Record<string, string[]> = {};
+      for (const [threadId, botId] of known.bindings) (threads[botId] ??= []).push(threadId);
+      return { bots, threads };
+    },
+
+    /**
+     * Where this bot's next thread should start: the work project it owns, if
+     * any, otherwise no project at all (the personal one). The same rule the
+     * Bots panel's "+" button follows.
+     */
+    async prepare(botId: string) {
+      const prepared = await callBots("bot_prepare", { botId }, z.object({ stateReady: z.boolean() }));
+      if (!prepared.stateReady) throw new Error("The bot's private state could not be prepared. Try again.");
+      // Ownership can have changed since the cached listing.
+      fetchedAt = 0;
+      await refresh();
+      const known = listing;
+      const bot = known?.launch.get(botId);
+      if (known === null || bot === undefined) throw new Error("This bot is no longer available.");
+      if (bot.hostId === undefined || known.personalProjectId === undefined) {
+        throw new Error("Bots Sidebar did not say where this bot runs. Update it and reload.");
+      }
+      const owned = new Set(
+        known.projectOwners
+          .filter((owner) => owner.botId === botId && known.projectIds.has(owner.projectId))
+          .map((owner) => owner.projectId),
+      );
+      const projectId = bot.linkedProjectIds.find((id) => owned.has(id)) ?? [...owned][0] ?? null;
+      const environment: Record<string, JsonValue> = {
+        type: "host",
+        hostId: bot.hostId,
+        workspace: projectId === null ? { type: "personal" } : { type: "unmanaged", path: null },
+      };
+      return { botId, projectId: projectId ?? known.personalProjectId, environment };
+    },
+
+    create: (botId: string, request: Record<string, JsonValue>) =>
+      callBots("conversation_create", { botId, request, makeMain: false }, z.object({ threadId: z.string() })),
+
     async ownersOf(threadIds: readonly string[]) {
       const ids = [...new Set(threadIds)];
-      const known = await currentListing();
+      let known = await currentListing();
       const owners: Record<string, string | null> = {};
       if (known === null) {
         for (const id of ids) owners[id] = null;
         return { bots: [] as Bot[], owners };
       }
-      await Promise.all(
-        ids.map(async (id) => {
-          const botId = await ownerOf(id, known.bindings);
-          // A binding to a bot that has since been deleted is no owner at all.
-          owners[id] = botId !== null && known.bots.has(botId) ? botId : null;
-        }),
-      );
+      const resolve = async (listing: BotListing) => {
+        await Promise.all(
+          ids.map(async (id) => {
+            const botId = await ownerOf(id, listing.bindings);
+            // A binding to a bot that has since been deleted is no owner at all.
+            owners[id] = botId !== null && listing.bots.has(botId) ? botId : null;
+          }),
+        );
+      };
+      await resolve(known);
+      // A thread that has just started is missing from a listing cached before it
+      // existed. Look again before calling it a guest, so its own bot shows from the start.
+      if (ids.some((id) => owners[id] === null) && Date.now() - fetchedAt > MISS_REFRESH_MS) {
+        await refresh();
+        if (listing !== null) {
+          known = listing;
+          await resolve(known);
+        }
+      }
       const used = new Set(Object.values(owners).filter((botId): botId is string => botId !== null));
       return { bots: [...known.bots.values()].filter((bot) => used.has(bot.id)), owners };
     },

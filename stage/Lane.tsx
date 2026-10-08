@@ -9,11 +9,12 @@ import type { CSSProperties } from "react";
 import { formatAge, formatContext, heatLevels, underPressure, basename } from "../lib/fleet";
 import { workOf } from "../lib/mood";
 import type { Mood } from "../vendor/sprites";
+import { botGeometry } from "../lib/loader";
 import { glowOf, isGuest } from "./cast";
 import { bubbleBudget, useElementWidth, usePose, useSpeech } from "./hooks";
 import { ActorCanvas } from "./ActorCanvas";
 import { Workspace } from "./Workspace";
-import { Check, KindGlyph, Layers } from "./glyphs";
+import { Check, KindGlyph, Layers, Pin } from "./glyphs";
 import { SIZES, type LaneModel, type Variant } from "./model";
 import type { ActorInput } from "./actor";
 
@@ -61,6 +62,9 @@ function Bars({ heat, busy }: { heat: readonly number[]; busy: boolean }) {
   );
 }
 
+/** Where each variant's actor canvas sits in its room (the `.bst-actor` rules in app.css). */
+const ACTOR_PLACEMENT = { compact: { left: 5, bottom: 5 }, roomy: { left: -8, bottom: 3 } } as const;
+
 /** The moods worth a word in a slim lane: the ones you may need to act on. */
 const LOUD = new Set<Mood>(["needs", "failed", "done", "held"]);
 
@@ -75,14 +79,22 @@ export interface LaneProps {
   leaving: boolean;
   onOpen: (threadId: string, split: boolean) => void;
   onDismiss?: (threadId: string) => void;
+  /** Pin it (`true`) or unpin it (`false`). */
+  onTogglePin?: (threadId: string, pinned: boolean) => void;
 }
 
-export function Lane({ model, variant, workspaceScale, index, entering, leaving, onOpen, onDismiss }: LaneProps) {
+export function Lane({ model, variant, workspaceScale, index, entering, leaving, onOpen, onDismiss, onTogglePin }: LaneProps) {
   const { row, bot } = model;
   const size = SIZES[variant];
   const bubble = useRef<HTMLDivElement>(null);
   const width = useElementWidth(bubble);
   const speech = useSpeech(row.said, bubbleBudget(width - 22, size.font, size.lines));
+
+  const shape = bot.avatar.shape;
+  const geometry = useMemo(
+    () => botGeometry(shape, { ...size.actor, ...ACTOR_PLACEMENT[variant] }),
+    [shape, size, variant],
+  );
 
   const failed = row.status === "error";
   const busy = row.busy;
@@ -144,7 +156,7 @@ export function Lane({ model, variant, workspaceScale, index, entering, leaving,
       style={style}
     >
       <div className="bst-scene">
-        <Workspace scene={model.workspace ?? null} />
+        <Workspace scene={model.workspace ?? null} color={bot.avatar.color} shape={shape} geometry={geometry} />
         <ActorCanvas
         bot={bot}
         k={size.actor.k * workspaceScale}
@@ -185,6 +197,18 @@ export function Lane({ model, variant, workspaceScale, index, entering, leaving,
               <Layers />
               {model.helpers > 1 ? model.helpers : null}
             </span>
+          ) : null}
+          {onTogglePin !== undefined ? (
+            <button
+              type="button"
+              className="bst-lane-pin"
+              aria-pressed={model.pinned === true}
+              aria-label={model.pinned === true ? `Unpin ${model.title}` : `Pin ${model.title}`}
+              title={model.pinned === true ? "Unpin" : "Pin"}
+              onClick={() => onTogglePin(row.id, model.pinned !== true)}
+            >
+              <Pin />
+            </button>
           ) : null}
           {onDismiss !== undefined ? (
             <button

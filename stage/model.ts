@@ -34,6 +34,8 @@ export interface LaneModel {
   age: number;
   /** The thread this one was spawned under, by title. */
   parentTitle: string | null;
+  /** Pinned in the sidebar, so the lane can offer to unpin it. */
+  pinned?: boolean;
 }
 
 /** Sizes that depend on where the lanes are shown. */

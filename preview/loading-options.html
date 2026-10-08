@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bot Stage — loading background options</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 28px; background: #121018; color: #e8e4f2; font: 14px/1.45 system-ui, sans-serif; }
+  h1 { margin: 0 0 4px; font-size: 20px; }
+  p.lede { margin: 0 0 20px; color: #a79fbd; max-width: 70ch; }
+  .bar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 22px; }
+  button { font: inherit; color: inherit; background: #2a2540; border: 1px solid #453d66; border-radius: 8px; padding: 7px 12px; cursor: pointer; }
+  button:hover { background: #352e52; }
+  button.on { background: #5b47b8; border-color: #8a75e8; }
+  label { color: #a79fbd; display: inline-flex; gap: 8px; align-items: center; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 18px; }
+  .card { background: #1b1727; border: 1px solid #2e2842; border-radius: 14px; padding: 14px; display: grid; gap: 10px; }
+  .card.picked { border-color: #8a75e8; box-shadow: 0 0 0 1px #8a75e8; }
+  .card h2 { margin: 0; font-size: 15px; }
+  .card p { margin: 0; color: #a79fbd; font-size: 13px; }
+  .frame { width: 256px; height: 256px; margin: 0 auto; border-radius: 12px; overflow: hidden; border: 1px solid #3a3358; background: #000; }
+  canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
+  .row { display: flex; gap: 8px; justify-content: center; }
+  #picked { color: #b9a8ff; }
+</style>
+</head>
+<body>
+<h1>Loading background options</h1>
+<p class="lede">Each one is a real 128×128 pixel canvas scaled up with hard pixel edges, the same size as the workspace it holds the place of. “Reveal” dissolves it into a sample drawn room in pixel blocks, the way the real one would arrive. Pick the one you like and tell me its name.</p>
+
+<div class="bar">
+  <button id="revealAll">Reveal all</button>
+  <button id="resetAll">Back to loading</button>
+  <label>Speed <input id="speed" type="range" min="0.4" max="2.5" step="0.1" value="1"></label>
+  <label>Frame rate
+    <select id="fps"><option value="8">8 fps (chunky)</option><option value="12" selected>12 fps</option><option value="24">24 fps</option><option value="60">60 fps (smooth)</option></select>
+  </label>
+  <span id="picked"></span>
+</div>
+
+<div class="grid" id="grid"></div>
+
+<script>
+const W = 128, H = 128;
+
+/* ---------- helpers ---------- */
+const hex = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map(v => (v + 0.5) / 16);
+const clamp01 = v => v < 0 ? 0 : v > 1 ? 1 : v;
+/* Quantise v (0..1) into n palette steps; `d` is how much ordered dither softens the band edges. */
+function step(v, n, x, y, d = 1) {
+  const f = clamp01(v) * (n - 1), lo = Math.floor(f), frac = f - lo;
+  const t = BAYER[(y & 3) * 4 + (x & 3)];
+  const k = d >= 1 ? frac : clamp01((frac - 0.5) / d + 0.5);
+  return Math.min(n - 1, lo + (k > t ? 1 : 0));
+}
+function hash(x, y) { let h = (x * 374761393 + y * 668265263) | 0; h = (h ^ (h >> 13)) * 1274126177 | 0; return ((h ^ (h >> 16)) >>> 0) / 4294967295; }
+
+/* ---------- the options: each returns a palette index for pixel x,y at time t ---------- */
+const OPTIONS = [
+  {
+    id: "plasma", name: "Dithered plasma",
+    note: "Slow overlapping waves in violet and teal, softened with a checker dither. The most 'gradient' of the set.",
+    palette: ["#14112a", "#231c4a", "#3a2c7a", "#5a43b0", "#2f7f9a", "#58c4c4", "#a8ecdd"],
+    px(x, y, t) {
+      const v = (Math.sin(x * .07 + t * .9) + Math.sin(y * .09 - t * .7) + Math.sin((x + y) * .05 + t * .5)
+        + Math.sin(Math.hypot(x - 64, y - 64) * .09 - t * .9)) / 8 + .5;
+      return step(v, 7, x, y);
+    },
+  },
+  {
+    id: "dusk", name: "Dusk bands",
+    note: "Hard, retro sky bands that drift and breathe, with only a thin dither at each edge. Calm and very 16-bit.",
+    palette: ["#1a1233", "#2b1b52", "#46246e", "#6c2f84", "#9a3d88", "#cc5a86", "#f08a7e", "#ffc59a"],
+    px(x, y, t) {
+      const v = y / H * .85 + .1 + .07 * Math.sin(x * .045 + t * .8) + .05 * Math.sin(t * .6 + y * .03);
+      return step(v, 8, x, y, .25);
+    },
+  },
+  {
+    id: "flow", name: "Diagonal flow",
+    note: "A soft diagonal ramp that scrolls endlessly, wrapping blue to purple to teal. Gentlest motion, easiest on the eyes.",
+    palette: ["#101a33", "#18305a", "#23508a", "#3a78b0", "#4aa0c0", "#5cc7c8", "#8a8ae0", "#5a46b4"],
+    px(x, y, t) {
+      const p = ((x + y) / 200 - t * .05) % 1, q = p < 0 ? p + 1 : p;
+      const tri = q < .5 ? q * 2 : 2 - q * 2;
+      return step(tri, 8, x, y);
+    },
+  },
+  {
+    id: "aurora", name: "Pixel aurora",
+    note: "Curtains of green and teal light swaying over a night sky with twinkling stars. The busiest, most 'alive' one.",
+    palette: ["#0a0d1f", "#0f1730", "#12304a", "#1b5a5e", "#2a8a6a", "#52c488", "#a6f0b4", "#ffffff"],
+    px(x, y, t) {
+      const sway = Math.sin(x * .09 + t * .8 + 2 * Math.sin(y * .04 + t * .5));
+      const curtain = Math.max(0, sway) * (1 - y / H * .9) * (.6 + .4 * Math.sin(x * .03 - t * .4));
+      const i = step(curtain * 1.15, 7, x, y, .5);
+      if (i <= 1 && hash(x, y) > .9935) return (Math.sin(t * 3 + hash(y, x) * 40) > .2) ? 7 : 2;
+      return i === 0 ? (y > 90 ? 1 : 0) : i;
+    },
+  },
+  {
+    id: "ripple", name: "Ripple",
+    note: "Concentric rings that spread slowly out from the middle, like a pond. Pairs well with the bot sitting in the corner.",
+    palette: ["#14122a", "#1d1c44", "#2a2c68", "#3c4690", "#5468b4", "#78a0d0"],
+    px(x, y, t) {
+      const d = Math.hypot(x - 64, y - 64);
+      const v = (Math.sin(d * .22 - t * 1.6) + 1) / 2 * Math.max(0, 1 - d / 105) + (1 - d / 150) * .25;
+      return step(v, 6, x, y, .5);
+    },
+  },
+  {
+    id: "lava", name: "Lava lamp",
+    note: "Soft blobs that drift, merge and part in magenta and amber. Warm and slow, with the biggest shapes.",
+    palette: ["#1a0f2a", "#2e1442", "#5a1f6a", "#8c2e78", "#c24470", "#ec7a5c", "#ffc070"],
+    px(x, y, t) {
+      let s = 0;
+      for (let i = 0; i < 4; i++) {
+        const bx = 64 + 42 * Math.sin(t * (.31 + i * .11) + i * 2), by = 64 + 44 * Math.cos(t * (.27 + i * .13) + i * 1.7);
+        s += (150 + i * 30) / (Math.pow(x - bx, 2) + Math.pow(y - by, 2) + 40);
+      }
+      return step(s * .55, 7, x, y, .5);
+    },
+  },
+];
+
+/* ---------- a sample drawn room to reveal into (the pickle pantry scene) ---------- */
+const SCENE = {
+  palette: ["#2b2438","#3d3350","#4f4264","#6b5a3e","#8a7248","#a58a58","#c9b07a","#3f7a3a","#5fa04a","#89c46a","#b5e08a","#2a5428","#e8e0c8","#9fc7c2","#d9f0ee","#c4553f","#f2c14e","#1d1828"],
+  rects: [[0,100,128,28,3],[0,100,128,2,4],[0,108,128,1,4],[0,118,128,1,4],[0,0,128,100,1],[0,0,128,4,17],[0,96,128,4,2],[70,14,52,3,3],[70,14,52,1,5],[72,17,4,22,3],[116,17,4,22,3],[70,40,52,3,3],[70,40,52,1,5],[72,43,4,18,3],[116,43,4,18,3],[70,62,52,3,3],[70,62,52,1,5],[74,20,8,20,9],[74,20,2,20,10],[82,22,6,18,12],[84,24,2,3,15],[90,24,6,16,16],[96,28,8,12,15],[106,22,6,18,8],[112,26,3,14,9],[78,46,10,16,7],[78,46,2,16,9],[84,44,4,3,11],[92,48,6,14,16],[100,50,8,12,13],[110,46,4,16,15],[92,66,26,30,2],[94,68,22,28,1],[96,64,22,3,5],[98,70,18,2,3],[100,76,14,2,3],[98,82,18,2,3],[8,34,30,3,3],[8,34,30,1,5],[10,37,3,20,3],[33,37,3,20,3],[8,58,30,3,3],[8,58,30,1,5],[10,38,6,4,6],[10,38,2,4,12],[18,40,8,3,15],[26,38,8,5,17],[12,48,10,8,16],[24,50,8,6,8],[44,56,34,40,13],[45,56,32,40,14],[44,56,34,4,6],[42,50,38,7,5],[42,50,38,2,6],[42,50,38,1,12],[47,62,28,3,13],[47,64,28,1,12],[48,66,26,26,7],[48,66,3,26,9],[71,66,3,26,11],[48,66,26,2,11],[55,72,10,5,10],[56,73,5,2,12],[58,82,12,5,10],[59,83,6,2,12],[52,88,18,3,11],[50,68,5,10,9],[66,70,6,12,8],[56,78,3,3,11],[64,90,4,2,10],[44,94,34,2,12],[44,96,34,1,13],[84,98,28,3,1],[86,90,24,9,5],[86,90,24,2,6],[88,92,20,2,3],[96,84,12,7,11],[94,78,4,6,7],[106,80,3,5,8],[98,82,6,3,9],[88,100,20,4,17],[100,75,6,3,10],[8,64,3,3,15],[22,70,3,3,9],[14,76,3,3,16]],
+};
+const sceneCanvas = document.createElement("canvas");
+sceneCanvas.width = W; sceneCanvas.height = H;
+{
+  const c = sceneCanvas.getContext("2d");
+  c.fillStyle = SCENE.palette[0]; c.fillRect(0, 0, W, H);
+  for (const [x, y, w, h, i] of SCENE.rects) { c.fillStyle = SCENE.palette[i]; c.fillRect(x, y, w, h); }
+}
+const sceneData = sceneCanvas.getContext("2d").getImageData(0, 0, W, H).data;
+
+/* ---------- cards ---------- */
+const grid = document.getElementById("grid");
+const cards = OPTIONS.map(opt => {
+  const el = document.createElement("div");
+  el.className = "card";
+  el.innerHTML = `<h2>${opt.name}</h2><div class="frame"><canvas width="${W}" height="${H}"></canvas></div><p>${opt.note}</p>
+    <div class="row"><button data-act="reveal">Reveal</button><button data-act="reset">Loading</button><button data-act="pick">Pick this</button></div>`;
+  grid.append(el);
+  const canvas = el.querySelector("canvas"), ctx = canvas.getContext("2d");
+  const img = ctx.createImageData(W, H);
+  const rgb = opt.palette.map(hex);
+  // Per-8px-block random order for the dissolve.
+  const order = Array.from({ length: 16 * 16 }, (_, i) => hash(i, 7));
+  const card = { opt, el, ctx, img, rgb, order, revealAt: null };
+  el.addEventListener("click", e => {
+    const act = e.target.dataset?.act;
+    if (act === "reveal") card.revealAt = performance.now();
+    if (act === "reset") card.revealAt = null;
+    if (act === "pick") {
+      cards.forEach(c => c.el.classList.toggle("picked", c === card));
+      document.getElementById("picked").textContent = `Picked: ${opt.name}`;
+    }
+  });
+  return card;
+});
+document.getElementById("revealAll").onclick = () => cards.forEach(c => c.revealAt = performance.now());
+document.getElementById("resetAll").onclick = () => cards.forEach(c => c.revealAt = null);
+
+/* ---------- animation loop, capped to the chosen frame rate ---------- */
+const REVEAL_MS = 1100;
+let last = 0, clock = 0;
+function frame(now) {
+  requestAnimationFrame(frame);
+  const fps = +document.getElementById("fps").value;
+  if (now - last < 1000 / fps - 1) return;
+  clock += (now - last) / 1000 * +document.getElementById("speed").value;
+  last = now;
+  for (const c of cards) {
+    const d = c.img.data;
+    const progress = c.revealAt === null ? 0 : Math.min(1, (now - c.revealAt) / REVEAL_MS);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const at = (y * W + x) * 4;
+      const showScene = progress > 0 && c.order[(y >> 3) * 16 + (x >> 3)] < progress * 1.02;
+      if (showScene) { d[at] = sceneData[at]; d[at + 1] = sceneData[at + 1]; d[at + 2] = sceneData[at + 2]; }
+      else { const col = c.rgb[c.opt.px(x, y, clock)]; d[at] = col[0]; d[at + 1] = col[1]; d[at + 2] = col[2]; }
+      d[at + 3] = 255;
+    }
+    c.ctx.putImageData(c.img, 0, 0);
+  }
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

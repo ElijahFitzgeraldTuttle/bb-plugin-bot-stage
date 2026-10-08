@@ -19,11 +19,13 @@ import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, PointerEvent a
 import { useUiSize } from "./lib/ui-size";
 import {
   definePluginApp,
+  experimental_NewThreadComposer as NewThreadComposer,
   experimental_ProviderIcon,
   experimental_useProviders,
   experimental_useSidebarThreadActions,
   experimental_useSidebarThreads,
   useBbContext,
+  useBbNavigate,
   useRealtime,
   useRealtimeConnectionState,
   useRpc,
@@ -32,24 +34,32 @@ import {
 import type {
   ExperimentalProviderIconProps,
   ExperimentalSidebarNavigationProps,
+  NewThreadRequest,
   PluginProvidersState,
   PluginSidebarProject,
   PluginSidebarThread,
 } from "@get-bb/plugin-sdk/app";
-import type { Bot as WireBot, rpcContract } from "./contract";
+import type { Bot as WireBot, LaunchTarget, rpcContract } from "./contract";
 import { EMPTY_FRAME, fleetFrameSchema, STAGE_CHANNEL, type FleetFrame, type FleetRow } from "./lib/fleet";
 import { clampWithin, measurePanel, type Offset } from "./lib/popout";
 import { guestBot, toStageBot } from "./stage/cast";
+import type { Bot as StageBot } from "./vendor/types";
 import { useNow } from "./stage/hooks";
 import type { LaneModel } from "./stage/model";
 import { WORKSPACE_CHANNEL, workspaceSchema, type WorkspaceScene } from "./lib/workspace";
 import { Panel } from "./stage/Panel";
+import type { Gaze } from "./stage/BotPixel";
+import { SpawnRail, type SpawnStatus } from "./stage/SpawnRail";
+import { ThreadsMenu, type ThreadItem } from "./stage/ThreadsMenu";
 import "./app.css";
 
 const PLUGIN_ID = "bot-stage";
 
 const POPOUT_OFFSET_KEY = "bb-plugin-bot-stage:popout-offset";
 const DISMISSED_KEY = "bb-plugin-bot-stage:dismissed";
+const MENU_OPEN_KEY = "bb-plugin-bot-stage:threads-open";
+/** Recent threads listed before the menu scrolls. */
+const RECENT_MAX = 12;
 
 /** How often an open stage renews its lease on the server's pump. */
 const HEARTBEAT_MS = 10_000;
@@ -57,6 +67,9 @@ const HEARTBEAT_MS = 10_000;
 const HYDRATE_MAX = 12;
 /** How often the cast is refreshed, for a bot that was recoloured meanwhile. */
 const CAST_REFRESH_MS = 30_000;
+/** How often, and for how long, a stage re-asks while a thread still has no bot or scene. */
+const NEW_THREAD_REFRESH_MS = 3_000;
+const NEW_THREAD_WINDOW_MS = 120_000;
 
 type ProviderEntry = PluginProvidersState["providers"][number];
 type ProviderRecord = ExperimentalProviderIconProps["provider"];
@@ -124,6 +137,30 @@ const restore = (id: string) => {
   const next = new Set(dismissedStore.get());
   next.delete(id);
   writeDismissed(next);
+};
+
+function readStored<T>(key: string, parse: (raw: unknown) => T, fallback: T): T {
+  try {
+    const raw = window.localStorage.getItem(key);
+    return raw === null ? fallback : parse(JSON.parse(raw));
+  } catch {
+    return fallback;
+  }
+}
+
+function writeStored(key: string, value: unknown): void {
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Storage blocked: the choice lasts until the page reloads.
+  }
+}
+
+const menuOpenStore = createStore<boolean>(typeof window === "undefined" ? false : readStored(MENU_OPEN_KEY, (raw) => raw === true, false));
+
+const toggleMenu = () => {
+  menuOpenStore.set(!menuOpenStore.get());
+  writeStored(MENU_OPEN_KEY, menuOpenStore.get());
 };
 
 function useStore<T>(store: ReturnType<typeof createStore<T>>): T {
@@ -263,20 +300,31 @@ function useCast(rows: readonly FleetRow[]): Cast {
   useRealtime(WORKSPACE_CHANNEL, useCallback((payload: unknown) => {
     if (!payload || typeof payload !== "object" || !("threadId" in payload) || !("scene" in payload)) return;
     const { threadId, scene } = payload;
-    if (typeof threadId !== "string" || !ids.includes(threadId)) return;
+    // A thread can be drawn before the frame lists it; keep the scene for when it does.
+    if (typeof threadId !== "string") return;
     const parsed = workspaceSchema.safeParse(scene);
     if (parsed.success) {
       workspaceRevision.current += 1;
       setCast(previous => ({ ...previous, workspaces: { ...previous.workspaces, [threadId]: parsed.data } }));
     }
-  }, [key]));
+  }, []));
 
   useEffect(() => {
     if (key === "") return;
     let live = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const startedAt = Date.now();
+    const next = (answered: boolean, settled: boolean) => {
+      if (!live) return;
+      // A new thread has no bot or scene for its first moments; look again quickly
+      // until both arrive, then settle into the slow refresh.
+      const fast = !settled && answered && Date.now() - startedAt < NEW_THREAD_WINDOW_MS;
+      timer = setTimeout(ask, fast ? NEW_THREAD_REFRESH_MS : CAST_REFRESH_MS);
+    };
     const ask = () => {
       const revision = workspaceRevision.current;
-      rpc.call("owners", { threadIds: key.split(",") }).then(
+      const asked = key.split(",");
+      rpc.call("owners", { threadIds: asked }).then(
         (answer) => {
           if (!live) return;
           setCast((previous) => {
@@ -287,17 +335,19 @@ function useCast(rows: readonly FleetRow[]): Cast {
               workspaces: revision === workspaceRevision.current
                 ? { ...previous.workspaces, ...answer.workspaces } : previous.workspaces };
           });
+          const workspaces = answer.workspaces ?? {};
+          next(true, asked.every((id) => answer.owners[id] != null && workspaces[id] != null));
         },
         () => {
           // A failed lookup keeps the cast it has; lanes fall back to guests.
+          next(false, true);
         },
       );
     };
     ask();
-    const timer = setInterval(ask, CAST_REFRESH_MS);
     return () => {
       live = false;
-      clearInterval(timer);
+      clearTimeout(timer);
     };
   }, [key, rpc]);
 
@@ -371,6 +421,7 @@ function useLanes(
         guest: owner === undefined,
         title: thread?.title ?? thread?.titleFallback ?? row.title,
         workspace: cast.workspaces[row.id] ?? null,
+        pinned: thread?.isPinned === true,
         projectName: project === undefined || project.isPersonal ? null : project.name,
         providerName,
         badge:
@@ -414,6 +465,271 @@ function peekLanes(values: Record<string, string | number | boolean> | undefined
   return typeof value === "number" && Number.isFinite(value) ? Math.max(2, Math.min(10, Math.round(value))) : 5;
 }
 
+interface Roster {
+  bots: readonly WireBot[];
+  /** Bot id to the threads filed directly under it. */
+  filed: Readonly<Record<string, readonly string[]>>;
+}
+
+const NO_ROSTER: Roster = { bots: [], filed: {} };
+
+/** The user's bots and which threads belong to them, kept fresh. */
+function useRoster(): Roster {
+  const rpc = useRpc<typeof rpcContract>();
+  const [roster, setRoster] = useState<Roster>(NO_ROSTER);
+  useEffect(() => {
+    let live = true;
+    const load = () => {
+      rpc.call("launch_bots", {}).then(
+        (answer) => {
+          if (live) setRoster({ bots: answer.bots, filed: answer.threads });
+        },
+        () => undefined, // keep the roster it has
+      );
+    };
+    load();
+    const timer = setInterval(load, CAST_REFRESH_MS);
+    return () => {
+      live = false;
+      clearInterval(timer);
+    };
+  }, [rpc]);
+  return roster;
+}
+
+/** The point the text cursor is at inside `box`, or null when it is not in there. */
+function caretPoint(box: HTMLElement): { x: number; y: number } | null {
+  const selection = document.getSelection();
+  const node = selection?.anchorNode;
+  if (selection === null || selection === undefined || selection.rangeCount === 0 || !node || !box.contains(node)) return null;
+  const range = selection.getRangeAt(0).cloneRange();
+  const rects = range.getClientRects();
+  const last = rects.length > 0 ? rects[rects.length - 1] : undefined;
+  if (last !== undefined && (last.width > 0 || last.height > 0)) return { x: last.right, y: last.top + last.height / 2 };
+  // A collapsed caret has no box of its own; measure the character before it.
+  if (node.nodeType === Node.TEXT_NODE && selection.anchorOffset > 0) {
+    range.setStart(node, selection.anchorOffset - 1);
+    range.setEnd(node, selection.anchorOffset);
+    const rect = range.getBoundingClientRect();
+    if (rect.width > 0 || rect.height > 0) return { x: rect.right, y: rect.top + rect.height / 2 };
+  }
+  const element = node instanceof Element ? node : node.parentElement;
+  const rect = element?.getBoundingClientRect();
+  return rect === undefined ? null : { x: rect.left, y: rect.top + Math.min(rect.height, 20) / 2 };
+}
+
+/** One block of look in each direction once the cursor is this far (px) from the bot. */
+const GAZE_DEAD_ZONE = 40;
+const lookStep = (distance: number): -1 | 0 | 1 => (distance > GAZE_DEAD_ZONE ? 1 : distance < -GAZE_DEAD_ZONE ? -1 : 0);
+
+/**
+ * Where the bot you are writing to is looking: at your text cursor as you type,
+ * or down at the composer while there is no cursor in it yet.
+ */
+function useTypingGaze(active: boolean): Gaze {
+  const [gaze, setGaze] = useState<Gaze>({ x: 0, y: 1 });
+  useEffect(() => {
+    if (!active) {
+      setGaze({ x: 0, y: 1 });
+      return;
+    }
+    const aim = () => {
+      const icon = document.querySelector<HTMLElement>('.bst-rail-bot[aria-pressed="true"]');
+      const box = document.querySelector<HTMLElement>(".bst-compose");
+      if (icon === null || box === null) return;
+      const from = icon.getBoundingClientRect();
+      const boxRect = box.getBoundingClientRect();
+      const at = caretPoint(box) ?? { x: boxRect.left + 24, y: boxRect.top + boxRect.height / 2 };
+      const next: Gaze = {
+        x: lookStep(at.x - (from.left + from.width / 2)),
+        y: lookStep(at.y - (from.top + from.height / 2)),
+      };
+      setGaze((previous) => (previous.x === next.x && previous.y === next.y ? previous : next));
+    };
+    aim();
+    const events = ["input", "keyup", "pointerup", "focusin"] as const;
+    document.addEventListener("selectionchange", aim);
+    for (const name of events) document.addEventListener(name, aim, true);
+    // The composer mounts a moment after it is picked, and wraps as it fills.
+    const timer = setInterval(aim, 400);
+    return () => {
+      document.removeEventListener("selectionchange", aim);
+      for (const name of events) document.removeEventListener(name, aim, true);
+      clearInterval(timer);
+    };
+  }, [active]);
+  return gaze;
+}
+
+/** The rail of bots to start a thread with, and the composer for the picked one. */
+function Spawn({ lanes, threads, roster }: { lanes: readonly LaneModel[]; threads: readonly PluginSidebarThread[]; roster: Roster }) {
+  const rpc = useRpc<typeof rpcContract>();
+  const navigate = useBbNavigate();
+  const actions = experimental_useSidebarThreadActions();
+  const { bots, filed } = roster;
+  const [pickedId, setPickedId] = useState<string | null>(null);
+  const [target, setTarget] = useState<LaunchTarget | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [focus, setFocus] = useState(0);
+  const submitting = useRef(false);
+
+  const status = useMemo(() => {
+    const out: Record<string, SpawnStatus> = {};
+    for (const lane of lanes) {
+      if (lane.guest) continue;
+      if (lane.waiting) out[lane.bot.id] = "needs";
+      else if (lane.row.busy && out[lane.bot.id] === undefined) out[lane.bot.id] = "live";
+    }
+    return out;
+  }, [lanes]);
+
+  // Where a click goes: the bot's most recently touched thread that still exists.
+  const lastThread = useMemo(() => {
+    const live = new Map<string, number>();
+    for (const thread of threads) if (!thread.isArchived) live.set(thread.id, thread.updatedAt);
+    const out = new Map<string, string>();
+    for (const [botId, ids] of Object.entries(filed)) {
+      let best: string | null = null;
+      for (const id of ids) {
+        const at = live.get(id);
+        if (at !== undefined && (best === null || at > (live.get(best) ?? 0))) best = id;
+      }
+      if (best !== null) out.set(botId, best);
+    }
+    return out;
+  }, [threads, filed]);
+  const hasThread = useMemo(() => new Set(lastThread.keys()), [lastThread]);
+
+  const open = (botId: string) => {
+    const id = lastThread.get(botId);
+    if (id !== undefined) actions.open(id);
+  };
+
+  const pick = (botId: string) => {
+    if (botId === pickedId) {
+      setPickedId(null);
+      setTarget(null);
+      return;
+    }
+    setPickedId(botId);
+    setTarget(null);
+    setError(null);
+    rpc.call("launch_prepare", { botId }).then(
+      (next) => {
+        setTarget(next);
+        setFocus((value) => value + 1);
+      },
+      (cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)),
+    );
+  };
+
+  const picked = bots.find((bot) => bot.id === pickedId);
+  const gaze = useTypingGaze(picked !== undefined);
+  return (
+    <SpawnRail bots={bots} pickedId={pickedId} status={status} hasThread={hasThread} onOpen={open} onNew={pick} gaze={gaze}>
+      {picked === undefined ? null : (
+        <div className="bst-compose">
+          <div className="bst-compose-to">
+            Message <b>{picked.name}</b>
+            <button type="button" className="bst-icon" aria-label="Close composer" onClick={() => pick(picked.id)}>
+              ×
+            </button>
+          </div>
+          {target === null ? (
+            error === null ? <p className="bst-compose-note">Getting {picked.name} ready…</p> : null
+          ) : (
+            <NewThreadComposer
+              defaultProjectId={target.projectId}
+              defaultEnvironment={target.environment as NewThreadRequest["environment"]}
+              defaultProviderId="claude-code"
+              defaultModel="claude-sonnet-5-5"
+              defaultReasoningLevel="high"
+              defaultPermissionMode="full"
+              layout="document"
+              focusRequest={focus}
+              draftKey={`bot-stage:launch:${picked.id}:${target.projectId}`}
+              onSubmit={async (request) => {
+                if (submitting.current) throw new Error("A thread is already being created.");
+                submitting.current = true;
+                setError(null);
+                try {
+                  const { threadId } = await rpc.call("launch_create", { botId: picked.id, request: { ...request } });
+                  setPickedId(null);
+                  setTarget(null);
+                  navigate.toThread(threadId);
+                } catch (cause) {
+                  setError(cause instanceof Error ? cause.message : String(cause));
+                  throw cause;
+                } finally {
+                  submitting.current = false;
+                }
+              }}
+            />
+          )}
+          {error === null ? null : (
+            <p role="alert" className="bst-compose-note" data-bad>
+              {error}
+            </p>
+          )}
+        </div>
+      )}
+    </SpawnRail>
+  );
+}
+
+/** Pinned and recent threads, as a drop-down under the stage. */
+function Threads({ threads, roster, currentThreadId }: { threads: readonly PluginSidebarThread[]; roster: Roster; currentThreadId: string | null }) {
+  const actions = experimental_useSidebarThreadActions();
+  const open = useStore(menuOpenStore);
+  const now = useNow(open);
+
+  const items = useMemo(() => {
+    const botOf = new Map<string, StageBot>();
+    for (const bot of roster.bots) for (const id of roster.filed[bot.id] ?? []) botOf.set(id, toStageBot(bot));
+    const byId = new Map(threads.map((thread) => [thread.id, thread]));
+    // A sub-thread belongs to whoever owns its nearest bound ancestor.
+    const ownerOf = (thread: PluginSidebarThread): StageBot | null => {
+      let at: PluginSidebarThread | undefined = thread;
+      for (let depth = 0; at !== undefined && depth < 12; depth += 1) {
+        const bot = botOf.get(at.id);
+        if (bot !== undefined) return bot;
+        at = at.parentThreadId === null ? undefined : byId.get(at.parentThreadId);
+      }
+      return null;
+    };
+    const itemOf = (thread: PluginSidebarThread): ThreadItem => ({
+      id: thread.id,
+      title: thread.title ?? thread.titleFallback ?? "Untitled thread",
+      bot: ownerOf(thread),
+      ageMs: Math.max(0, now - thread.updatedAt),
+      pinned: thread.isPinned,
+      state: thread.hasPendingInteraction ? "needs" : looksBusy(thread) ? "live" : null,
+    });
+    const pinned = threads
+      .filter((thread) => thread.isPinned && !thread.isArchived)
+      .sort((left, right) => (right.pinnedAt ?? 0) - (left.pinnedAt ?? 0))
+      .map(itemOf);
+    const recent = threads
+      .filter((thread) => !thread.isArchived && thread.parentThreadId === null && !thread.isPinned)
+      .sort((left, right) => right.updatedAt - left.updatedAt)
+      .slice(0, RECENT_MAX)
+      .map(itemOf);
+    return { pinned, recent };
+  }, [threads, roster, now]);
+
+  return (
+    <ThreadsMenu
+      open={open}
+      onToggle={toggleMenu}
+      pinned={items.pinned}
+      recent={items.recent}
+      currentId={currentThreadId}
+      onOpen={(id, split) => actions.open(id, { split })}
+      onTogglePin={(id, pinned) => void actions.setPinned(id, pinned)}
+    />
+  );
+}
+
 function LiveStage({ variant, title, floating, onClose, onPopout, onDragStart, onNudge }: PanelFrameProps) {
   const settings = useSettings();
   const { threads, projects } = experimental_useSidebarThreads();
@@ -422,6 +738,7 @@ function LiveStage({ variant, title, floating, onClose, onPopout, onDragStart, o
   const { frame, stale, receivedAt } = useStageFeed(threads, currentThreadId);
   const onlyWorking = useStore(workingOnlyStore);
   const { lanes } = useLanes(frame, receivedAt, threads, projects, onlyWorking);
+  const roster = useRoster();
   return (
     <Panel
       lanes={lanes}
@@ -434,17 +751,34 @@ function LiveStage({ variant, title, floating, onClose, onPopout, onDragStart, o
       onToggleWorking={() => workingOnlyStore.set(!workingOnlyStore.get())}
       onOpen={(id, split) => actions.open(id, { split })}
       onDismiss={dismiss}
+      onTogglePin={(id, pinned) => void actions.setPinned(id, pinned)}
       onClose={onClose}
       onPopout={onPopout}
       onDragStart={onDragStart}
       onNudge={onNudge}
+      spawn={<Spawn lanes={lanes} threads={threads} roster={roster} />}
+      threadsMenu={<Threads threads={threads} roster={roster} currentThreadId={currentThreadId} />}
     />
+  );
+}
+
+/** The Bots Sidebar's list, which the bot strip replaces, unless it was asked to stay. */
+function HideBotsPanel() {
+  const settings = useSettings();
+  if (settings.values?.hideBotsPanel === false) return null;
+  // The list sits in a scroll box that fills the space above the sidebar footer.
+  // Keep the box, so the footer stays at the bottom, but strip it of its look.
+  return (
+    <style>
+      {".bots-sidebar { display: none !important; } *:has(> .contents > .bots-sidebar:only-child) { background: transparent !important; border-color: transparent !important; box-shadow: none !important; backdrop-filter: none !important; }"}
+    </style>
   );
 }
 
 function StageSidebar({ experimental_Original: Original }: ExperimentalSidebarNavigationProps) {
   return (
     <>
+      <HideBotsPanel />
       <Original />
       <section className="bst-sidebar-module" aria-label="Bot Stage" data-testid="bot-stage-sidebar">
         <LiveStage variant="compact" onPopout={() => popoutStore.set(true)} />

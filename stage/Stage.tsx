@@ -19,6 +19,7 @@ export interface StageProps {
   workspaceScale?: number;
   onOpen: (threadId: string, split: boolean) => void;
   onDismiss?: (threadId: string) => void;
+  onTogglePin?: (threadId: string, pinned: boolean) => void;
   /** Shown instead of the list when there is nothing to put on stage. */
   empty?: ReactNode;
   className?: string;
@@ -27,7 +28,7 @@ export interface StageProps {
   style?: React.CSSProperties;
 }
 
-export function Stage({ lanes, variant, workspaceScale = 1, onOpen, onDismiss, empty, className, onScroll, listRef, style }: StageProps) {
+export function Stage({ lanes, variant, workspaceScale = 1, onOpen, onDismiss, onTogglePin, empty, className, onScroll, listRef, style }: StageProps) {
   const own = useRef<HTMLUListElement | null>(null);
   const ref = listRef ?? own;
   const born = useRef(performance.now());
@@ -50,6 +51,7 @@ export function Stage({ lanes, variant, workspaceScale = 1, onOpen, onDismiss, e
           leaving={entry.leaving}
           onOpen={onOpen}
           onDismiss={onDismiss}
+          onTogglePin={onTogglePin}
         />
       ))}
     </ul>

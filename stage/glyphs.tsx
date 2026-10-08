@@ -97,3 +97,14 @@ export function KindGlyph({ kind, ...props }: { kind: string | null } & Props) {
   const Glyph = (kind !== null && BY_KIND[kind]) || Wrench;
   return <Glyph {...props} />;
 }
+
+export const Pin = (p: Props) => (
+  <Svg {...p}>
+    <path d="M6 2.5h4l-.5 4 2 2.5H4.5l2-2.5zM8 9v4.5" />
+  </Svg>
+);
+export const Chevron = (p: Props) => (
+  <Svg {...p}>
+    <path d="M4 6l4 4 4-4" />
+  </Svg>
+);

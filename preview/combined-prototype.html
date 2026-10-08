@@ -1,0 +1,274 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Bot Stage + Bots — combined panel prototype</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root {
+    --bg:#f6f6f4; --sidebar:#fbfbfa; --fg:#18181b; --muted:#71717a; --line:#e4e4e7; --hover:#f0f0ee; --card:#fff;
+    --ask:#f2a63a; --ok:#3fb67f; --bad:#e5484d; --accent:#18181b; --accent-fg:#fff;
+  }
+  [data-theme=dark] {
+    --bg:#101012; --sidebar:#17171a; --fg:#ececef; --muted:#8b8b95; --line:#2a2a30; --hover:#202025; --card:#1d1d21;
+    --accent:#ececef; --accent-fg:#111;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:13px/1.4 system-ui,sans-serif; min-height:100vh; }
+  .shell { display:flex; gap:40px; padding:28px; align-items:flex-start; flex-wrap:wrap; }
+  .note { max-width:300px; color:var(--muted); font-size:12.5px; }
+  .note h1 { font-size:16px; color:var(--fg); margin:0 0 6px; }
+  .note ul { padding-left:16px; } .note li { margin:4px 0; }
+  .switch { display:flex; gap:6px; margin:12px 0; flex-wrap:wrap; }
+  .switch button, .tool { font:inherit; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:8px; padding:5px 10px; cursor:pointer; }
+  .switch button[aria-pressed=true] { background:var(--accent); color:var(--accent-fg); border-color:var(--accent); }
+  .col { display:flex; flex-direction:column; gap:8px; }
+  .col h2 { margin:0; font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); }
+
+  /* ---------- the panel ---------- */
+  .panel { width:340px; background:var(--sidebar); border:1px solid var(--line); border-radius:14px; padding:8px; display:flex; flex-direction:column; gap:4px; box-shadow:0 8px 30px #0001; position:relative; }
+  .bar { display:flex; align-items:center; gap:8px; padding:2px 6px 6px; }
+  .brand { font-weight:650; }
+  .lamp { font-size:9.5px; font-weight:700; letter-spacing:.08em; padding:2px 6px; border-radius:99px; border:1px solid var(--line); color:var(--muted); }
+  .lamp[data-s=live] { color:var(--ok); border-color:color-mix(in oklab,var(--ok) 50%,transparent); }
+  .lamp[data-s=needs] { color:var(--ask); border-color:color-mix(in oklab,var(--ask) 60%,transparent); }
+  .grow { flex:1; }
+  .count { font:inherit; font-size:11px; color:var(--muted); background:none; border:0; cursor:pointer; padding:2px 4px; border-radius:6px; }
+  .count:hover, .icon:hover { background:var(--hover); }
+  .icon { width:24px; height:24px; border:0; background:none; color:var(--muted); border-radius:6px; cursor:pointer; display:grid; place-items:center; font-size:14px; }
+
+  /* ---------- spawn section ---------- */
+  .spawn { border:1px solid var(--line); border-radius:11px; background:var(--card); padding:7px 8px; margin:0 0 4px; position:relative; }
+  .spawn-head { display:flex; align-items:center; gap:6px; font-size:10.5px; color:var(--muted); letter-spacing:.06em; text-transform:uppercase; margin-bottom:6px; }
+  .spawn-head .hint { margin-left:auto; text-transform:none; letter-spacing:0; font-size:10.5px; }
+  .chips { display:flex; gap:4px; flex-wrap:wrap; }
+  .chip { position:relative; width:38px; height:38px; border-radius:10px; border:1px solid transparent; background:none; padding:0; cursor:pointer; display:grid; place-items:center; }
+  .chip:hover { background:var(--hover); }
+  .chip[aria-pressed=true] { border-color:var(--fg); background:var(--hover); }
+  .chip .plus { position:absolute; right:-3px; top:-3px; width:15px; height:15px; border-radius:99px; background:var(--accent); color:var(--accent-fg); font-size:11px; line-height:15px; text-align:center; opacity:0; transform:scale(.6); transition:.12s; }
+  .chip:hover .plus, .chip[aria-pressed=true] .plus { opacity:1; transform:none; }
+  .chip .dot { position:absolute; right:3px; bottom:3px; width:8px; height:8px; border-radius:99px; border:2px solid var(--card); background:var(--ok); }
+  .chip .dot[data-s=needs] { background:var(--ask); } .chip .dot[data-s=idle] { display:none; }
+  .chip .tip { position:absolute; bottom:calc(100% + 6px); left:50%; transform:translateX(-50%); background:var(--fg); color:var(--bg); font-size:11px; padding:3px 7px; border-radius:6px; white-space:nowrap; pointer-events:none; opacity:0; transition:.1s; z-index:5; }
+  .chip:hover .tip { opacity:1; }
+
+  .composer { margin-top:8px; display:flex; flex-direction:column; gap:6px; animation:in .14s ease-out; }
+  @keyframes in { from { opacity:0; transform:translateY(-4px); } }
+  .composer .to { display:flex; align-items:center; gap:6px; font-size:11.5px; color:var(--muted); }
+  .composer .to b { color:var(--fg); }
+  .composer textarea { width:100%; resize:none; font:inherit; color:var(--fg); background:var(--sidebar); border:1px solid var(--line); border-radius:8px; padding:7px 9px; min-height:52px; outline:none; }
+  .composer textarea:focus { border-color:var(--fg); }
+  .row { display:flex; gap:6px; align-items:center; }
+  .pill { white-space:nowrap; font:inherit; font-size:11px; border:1px solid var(--line); background:var(--sidebar); color:var(--muted); border-radius:99px; padding:2px 8px; cursor:pointer; }
+  .pill:hover { color:var(--fg); }
+  .go { white-space:nowrap; margin-left:auto; font:inherit; font-weight:600; border:0; background:var(--accent); color:var(--accent-fg); border-radius:8px; padding:5px 12px; cursor:pointer; }
+  .go:disabled { opacity:.35; cursor:default; }
+  kbd { font:10px ui-monospace,monospace; border:1px solid var(--line); border-bottom-width:2px; border-radius:4px; padding:0 4px; color:var(--muted); }
+
+  /* variant B: one-line launcher + popover */
+  .launcher { width:100%; display:flex; align-items:center; gap:8px; font:inherit; color:var(--muted); text-align:left; background:var(--card); border:1px solid var(--line); border-radius:10px; padding:7px 10px; cursor:pointer; margin-bottom:4px; }
+  .launcher:hover { border-color:var(--muted); color:var(--fg); }
+  .launcher .plusbox { width:18px; height:18px; border-radius:6px; background:var(--accent); color:var(--accent-fg); display:grid; place-items:center; font-size:13px; }
+  .launcher kbd { margin-left:auto; }
+  .pop { position:absolute; left:8px; right:8px; top:78px; z-index:10; background:var(--card); border:1px solid var(--line); border-radius:12px; box-shadow:0 14px 40px #0004; padding:6px; animation:in .12s ease-out; }
+  .pop input { width:100%; font:inherit; color:var(--fg); background:var(--sidebar); border:1px solid var(--line); border-radius:8px; padding:7px 9px; outline:none; margin-bottom:4px; }
+  .opt { display:flex; align-items:center; gap:9px; padding:5px 7px; border-radius:8px; cursor:pointer; }
+  .opt[aria-selected=true] { background:var(--hover); }
+  .opt .meta { font-size:11px; color:var(--muted); margin-left:auto; }
+  .opt .nm { font-weight:550; }
+
+  /* variant C: rail — avatars on the stage floor itself */
+  .rail { display:flex; align-items:center; gap:2px; padding:4px 6px; margin:0 0 4px; border:1px dashed var(--line); border-radius:11px; }
+  .rail .lab { font-size:10.5px; color:var(--muted); margin-right:4px; letter-spacing:.05em; text-transform:uppercase; }
+  .rail .chip { width:30px; height:30px; }
+  .rail .more { margin-left:auto; }
+  .inline-compose { margin:0 0 4px; }
+
+  /* ---------- avatars (shape + eyes) ---------- */
+  .av { --s:26px; width:var(--s); height:var(--s); background:var(--c); position:relative; display:block; flex:0 0 auto; }
+  .av[data-shape=round] { border-radius:50%; } .av[data-shape=squircle] { border-radius:32%; }
+  .av[data-shape=capsule] { border-radius:99px; width:calc(var(--s)*.78); }
+  .av[data-shape=triangle] { clip-path:polygon(50% 6%,96% 92%,4% 92%); border-radius:0; }
+  .av[data-shape=cloud] { border-radius:48% 52% 44% 56%/60% 58% 42% 40%; }
+  .av[data-shape=blob] { border-radius:58% 42% 52% 48%/46% 56% 44% 54%; }
+  .av::before, .av::after { content:""; position:absolute; top:40%; width:15%; height:20%; border-radius:99px; background:#111; opacity:.8; }
+  .av::before { left:28%; } .av::after { right:28%; }
+  .av[data-shape=triangle]::before, .av[data-shape=triangle]::after { top:56%; }
+
+  /* ---------- stage lanes ---------- */
+  .stage { display:flex; flex-direction:column; gap:2px; }
+  .lane { display:grid; grid-template-columns:64px 1fr; gap:10px; padding:7px 6px; border-radius:11px; cursor:pointer; position:relative; }
+  .lane:hover { background:var(--hover); }
+  .lane[data-needs=true] { box-shadow:inset 0 0 0 1.5px color-mix(in oklab,var(--ask) 70%,transparent); }
+  .ws { width:64px; height:64px; border-radius:8px; position:relative; overflow:hidden; image-rendering:pixelated; background:#1b1f2e; }
+  .ws canvas { width:100%; height:100%; image-rendering:pixelated; display:block; }
+  .ws .av { position:absolute; left:6px; bottom:4px; --s:22px; animation:bob 1.6s ease-in-out infinite; }
+  .lane[data-state=idle] .av { animation:none; }
+  @keyframes bob { 50% { transform:translateY(-3px); } }
+  .body { min-width:0; display:flex; flex-direction:column; gap:3px; }
+  .title { display:flex; align-items:center; gap:6px; }
+  .title b { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
+  .badge { font-size:10px; font-weight:650; color:var(--muted); border:1px solid var(--line); border-radius:99px; padding:0 6px; white-space:nowrap; }
+  .lane[data-needs=true] .badge { color:var(--ask); border-color:var(--ask); }
+  .bubble { background:color-mix(in oklab,var(--c) 14%,var(--card)); border:1px solid color-mix(in oklab,var(--c) 32%,var(--line)); border-radius:4px 10px 10px 10px; padding:4px 8px; font-size:12px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  .facts { display:flex; align-items:center; gap:8px; font-size:10.5px; color:var(--muted); }
+  .bars { display:inline-flex; align-items:flex-end; gap:1px; height:10px; }
+  .bars i { width:2px; background:var(--c); opacity:.8; border-radius:1px; }
+  .new-flash { animation:flash 1.4s ease-out; }
+  @keyframes flash { from { background:color-mix(in oklab,var(--ok) 28%,transparent); } }
+  .empty { padding:18px 10px; text-align:center; color:var(--muted); }
+  .toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:var(--fg); color:var(--bg); padding:8px 14px; border-radius:10px; font-size:12.5px; opacity:0; transition:.2s; pointer-events:none; }
+  .toast.on { opacity:1; }
+  .scale-note { font-size:11px; }
+</style>
+
+<div class="shell">
+  <div class="note">
+    <h1>Bot Stage + Bots, one panel</h1>
+    Everything below the spawn section is the existing Bot Stage lane list. The spawn section replaces the Bots panel's per-bot "+" button.
+    <div class="switch" id="variants" role="group" aria-label="Spawn section variant"></div>
+    <div class="switch">
+      <button class="tool" id="theme">Toggle dark</button>
+      <button class="tool" id="reset">Reset demo</button>
+    </div>
+    <ul id="desc"></ul>
+    <p class="scale-note">Interactive: pick a bot, type, press <kbd>Ctrl</kbd>+<kbd>Enter</kbd> and a new lane appears on the stage. Nothing here talks to BB.</p>
+  </div>
+  <div class="col"><h2 id="vname"></h2><div id="mount"></div></div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const BOTS = [
+  { id:'arch', name:'BB Architect', c:'#7ccf9a', shape:'round',    project:'BB Architect' },
+  { id:'coach', name:'Business Coach', c:'#f0b24a', shape:'cloud', project:'Scan2Plan' },
+  { id:'studio', name:'Studio C', c:'#6aa6f0', shape:'triangle',   project:'Studio C' },
+  { id:'rem', name:'Reminders', c:'#f07aa8', shape:'blob',        project:'Personal' },
+  { id:'vault', name:'Vault Keeper', c:'#b18af0', shape:'squircle',project:'Vault' },
+  { id:'old', name:'Old Faithful', c:'#8fd0d0', shape:'capsule',   project:'Misc' },
+];
+const bot = id => BOTS.find(b => b.id === id);
+const seedLanes = () => ([
+  { id:1, bot:'arch',  title:'Combine bot stage + bots panel', state:'working', badge:'editing', said:'Prototype is written; checking the three spawn variants side by side.', needs:false },
+  { id:2, bot:'coach', title:'Quarterly pricing review',       state:'needs',   badge:'needs you · approve', said:'I drafted the tier table. Want me to push it to the vault?', needs:true },
+  { id:3, bot:'studio',title:'Fix placement',                  state:'working', badge:'running', said:'Re-rendering shots 4–7 with the new anchor offsets.', needs:false },
+  { id:4, bot:'vault', title:'Morning close',                  state:'idle',    badge:'done', said:'Yesterday closed. Three captures carried over.', needs:false },
+]);
+
+const S = { variant:'A', lanes:seedLanes(), picked:null, popOpen:false, popQ:'', popIdx:0, draft:'', project:null, nextId:10, flash:null };
+const VARIANTS = {
+  A:{ name:'A — Bot chips + inline composer', desc:[
+    'One row of bot avatars sits above the stage. Click one and a small composer opens right there.',
+    'Live badge dots on each chip (working / needs you), so it doubles as a bots status row.',
+    'Most visual, costs ~50px of height when closed, ~130px when composing.'] },
+  B:{ name:'B — One-line launcher + picker', desc:[
+    'Collapses to a single "New thread…" line (or Ctrl+Shift+N). Opens a searchable bot picker, then the composer.',
+    'Smallest footprint: 34px. Scales to 20+ bots without wrapping.',
+    'Less glanceable: you don\'t see the bots until you open it.'] },
+  C:{ name:'C — Avatar rail, no frame', desc:[
+    'Tiniest option: a single strip of avatars on the stage itself, 30px tall.',
+    'Click = composer drops under the rail. Shift-click = instant blank thread with that bot.',
+    'Overflow goes to a "…" picker (same as B).'] },
+};
+
+function av(b, s) { return `<span class="av" data-shape="${b.shape}" style="--c:${b.c};${s?`--s:${s}px`:''}"></span>`; }
+function busyOf(id) { const l = S.lanes.find(l => l.bot===id && l.state!=='idle'); return !l ? 'idle' : l.needs ? 'needs' : 'live'; }
+
+function chips(size) {
+  return BOTS.map(b => `<button class="chip" data-bot="${b.id}" aria-pressed="${S.picked===b.id}" aria-label="New thread with ${b.name}">
+    ${av(b, size)}<span class="plus">+</span><span class="dot" data-s="${busyOf(b.id)}"></span><span class="tip">New thread · ${b.name}</span></button>`).join('');
+}
+function composer() {
+  const b = bot(S.picked); if (!b) return '';
+  return `<div class="composer">
+    <div class="to">${av(b,16)} Message <b>${b.name}</b> <span class="pill" id="proj">${S.project||b.project} ▾</span></div>
+    <textarea id="draft" placeholder="What should ${b.name.split(' ')[0]} work on?">${S.draft}</textarea>
+    <div class="row"><span class="pill">sonnet 5.5</span><span class="pill">high</span><span class="pill">full</span>
+      <button class="go" id="go" ${S.draft.trim()?'':'disabled'}>Spawn <kbd>Ctrl ↵</kbd></button></div>
+  </div>`;
+}
+function pop() {
+  if (!S.popOpen) return '';
+  const q = S.popQ.toLowerCase();
+  const list = BOTS.filter(b => b.name.toLowerCase().includes(q));
+  const idx = Math.min(S.popIdx, Math.max(0,list.length-1));
+  return `<div class="pop"><input id="popq" placeholder="Pick a bot…" value="${S.popQ}" autofocus>
+    ${list.map((b,i)=>`<div class="opt" data-pick="${b.id}" aria-selected="${i===idx}">${av(b,22)}<span class="nm">${b.name}</span><span class="meta">${b.project}${busyOf(b.id)!=='idle'?' · '+(busyOf(b.id)==='needs'?'needs you':'working'):''}</span></div>`).join('') || '<div class="empty">No bot matches</div>'}</div>`;
+}
+function spawnSection() {
+  if (S.variant==='A') return `<div class="spawn"><div class="spawn-head">New thread with<span class="hint">click a bot</span></div><div class="chips">${chips(26)}</div>${composer()}</div>`;
+  if (S.variant==='B') return `<button class="launcher" id="launch"><span class="plusbox">+</span>New thread…<kbd>Ctrl ⇧ N</kbd></button>${pop()}${S.picked?`<div class="spawn">${composer()}</div>`:''}`;
+  const rail = `<div class="rail"><span class="lab">New</span>${BOTS.slice(0,5).map(b=>`<button class="chip" data-bot="${b.id}" aria-pressed="${S.picked===b.id}" aria-label="New thread with ${b.name}">${av(b,20)}<span class="dot" data-s="${busyOf(b.id)}"></span><span class="tip">${b.name} · shift-click = blank</span></button>`).join('')}
+      <button class="icon more" id="launch" title="All bots">…</button></div>`;
+  return rail + pop() + (S.picked?`<div class="spawn inline-compose">${composer()}</div>`:'');
+}
+
+function pixelWs(seed, c) {
+  const cv = document.createElement('canvas'); cv.width = cv.height = 32;
+  const g = cv.getContext('2d'); let r = seed*9301+49297;
+  const rnd = () => (r = (r*9301+49297)%233280)/233280;
+  g.fillStyle = '#1b1f2e'; g.fillRect(0,0,32,32); g.fillStyle='#10131f'; g.fillRect(0,23,32,9);
+  const pal = ['#2d3558','#4a5a94','#e8c170','#4fb286','#c8553d','#8fa3d8'];
+  for (let i=0;i<9;i++){ g.fillStyle=pal[Math.floor(rnd()*pal.length)]; g.fillRect(Math.floor(rnd()*26),Math.floor(rnd()*20),3+Math.floor(rnd()*6),2+Math.floor(rnd()*5)); }
+  g.fillStyle=c; g.globalAlpha=.25; g.fillRect(0,0,32,32); g.globalAlpha=1;
+  return cv;
+}
+function laneHtml(l) {
+  const b = bot(l.bot);
+  return `<div class="lane ${S.flash===l.id?'new-flash':''}" data-id="${l.id}" data-state="${l.state}" data-needs="${l.needs}" style="--c:${b.c}">
+    <div class="ws" data-seed="${l.id}">${av(b,22)}</div>
+    <div class="body"><div class="title"><b>${l.title}</b><span class="badge">${l.badge}</span></div>
+      <div class="bubble">${l.said}</div>
+      <div class="facts"><span>${b.name}</span><span class="bars">${[4,7,5,9,6,3].map(h=>`<i style="height:${h}px"></i>`).join('')}</span><span>${l.state==='idle'?'quiet':'live'}</span></div></div></div>`;
+}
+function render() {
+  const working = S.lanes.filter(l=>l.state!=='idle').length, needs = S.lanes.filter(l=>l.needs).length;
+  document.getElementById('vname').textContent = VARIANTS[S.variant].name;
+  document.getElementById('desc').innerHTML = VARIANTS[S.variant].desc.map(d=>`<li>${d}</li>`).join('');
+  document.getElementById('variants').innerHTML = Object.keys(VARIANTS).map(k=>`<button data-v="${k}" aria-pressed="${S.variant===k}">${k}</button>`).join('');
+  document.getElementById('mount').innerHTML = `<div class="panel">
+    <div class="bar"><span class="brand">Bot Stage</span><span class="lamp" data-s="${needs?'needs':working?'live':'quiet'}">${needs?'NEEDS YOU':working?'ON AIR':'QUIET'}</span><span class="grow"></span>
+      <button class="count">${working}/${S.lanes.length} working</button><button class="icon" title="Options">⋯</button><button class="icon" title="Pop out">⤢</button></div>
+    ${spawnSection()}
+    <div class="stage">${S.lanes.map(laneHtml).join('') || '<div class="empty">No threads yet.</div>'}</div></div>`;
+  document.querySelectorAll('.ws').forEach(w => w.prepend(pixelWs(+w.dataset.seed, getComputedStyle(w.closest('.lane')).getPropertyValue('--c'))));
+  wire();
+}
+function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.classList.add('on'); setTimeout(()=>t.classList.remove('on'),1800); }
+function spawn() {
+  const b = bot(S.picked); if (!b) return;
+  const text = S.draft.trim() || 'New conversation';
+  const id = S.nextId++;
+  S.lanes.unshift({ id, bot:b.id, title:text.length>34?text.slice(0,32)+'…':text, state:'working', badge:'starting', said:'Reading your message…', needs:false });
+  S.flash = id; S.picked = null; S.draft = ''; S.popOpen = false; S.popQ=''; render(); toast(`Spawned a thread with ${b.name}`);
+  setTimeout(()=>{ S.flash=null; }, 1500);
+}
+function pick(id, e) {
+  if (S.variant==='C' && e && e.shiftKey) { S.picked=id; S.draft=''; spawn(); return; }
+  S.picked = S.picked===id && !S.popOpen ? null : id; S.popOpen=false; S.popQ=''; render();
+  const d = document.getElementById('draft'); if (d) d.focus();
+}
+function wire() {
+  document.querySelectorAll('[data-bot]').forEach(el => el.onclick = e => pick(el.dataset.bot, e));
+  document.querySelectorAll('[data-pick]').forEach(el => el.onclick = e => pick(el.dataset.pick, e));
+  const l = document.getElementById('launch'); if (l) l.onclick = () => { S.popOpen=!S.popOpen; S.picked=null; render(); const q=document.getElementById('popq'); if(q) q.focus(); };
+  const q = document.getElementById('popq');
+  if (q) { q.focus(); q.setSelectionRange(q.value.length,q.value.length);
+    q.oninput = () => { S.popQ=q.value; S.popIdx=0; render(); };
+    q.onkeydown = e => { const list=BOTS.filter(b=>b.name.toLowerCase().includes(S.popQ.toLowerCase()));
+      if(e.key==='ArrowDown'){S.popIdx=Math.min(list.length-1,S.popIdx+1);render();}
+      else if(e.key==='ArrowUp'){S.popIdx=Math.max(0,S.popIdx-1);render();}
+      else if(e.key==='Enter'&&list[S.popIdx]){pick(list[S.popIdx].id,e);}
+      else if(e.key==='Escape'){S.popOpen=false;render();} }; }
+  const d = document.getElementById('draft');
+  if (d) { d.oninput = () => { S.draft=d.value; document.getElementById('go').disabled=!S.draft.trim(); };
+    d.onkeydown = e => { if (e.key==='Enter' && (e.ctrlKey||e.metaKey)) spawn(); if (e.key==='Escape'){S.picked=null;render();} }; }
+  const go = document.getElementById('go'); if (go) go.onclick = spawn;
+  document.querySelectorAll('.lane').forEach(el => el.onclick = () => toast('Would open thread '+el.dataset.id));
+}
+document.getElementById('variants').onclick = e => { const v=e.target.dataset.v; if(v){S.variant=v;S.picked=null;S.popOpen=false;render();} };
+document.getElementById('theme').onclick = () => { const r=document.documentElement; r.dataset.theme = r.dataset.theme==='dark'?'':'dark'; render(); };
+document.getElementById('reset').onclick = () => { S.lanes=seedLanes(); S.picked=null; S.popOpen=false; S.draft=''; render(); };
+document.addEventListener('keydown', e => { if (e.ctrlKey && e.shiftKey && e.key.toLowerCase()==='n') { e.preventDefault(); if(S.variant==='A'){S.picked=S.picked||'arch';} else {S.popOpen=true;S.picked=null;} render(); } });
+const p = new URLSearchParams(location.search); if (p.get('v')) S.variant = p.get('v'); if (p.get('theme')==='dark') document.documentElement.dataset.theme='dark';
+if (p.get('pick')) { S.picked=p.get('pick'); S.draft=p.get('draft')||''; } if (p.get('pop')) S.popOpen=true;
+render();
+</script>

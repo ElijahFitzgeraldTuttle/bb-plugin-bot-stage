@@ -20,12 +20,17 @@ export interface PanelProps {
   onToggleWorking: () => void;
   onOpen: (threadId: string, split: boolean) => void;
   onDismiss?: (threadId: string) => void;
+  onTogglePin?: (threadId: string, pinned: boolean) => void;
   onClose?: () => void;
   onPopout?: () => void;
   onDragStart?: (event: ReactPointerEvent<HTMLElement>) => void;
   onNudge?: (event: ReactKeyboardEvent<HTMLElement>) => void;
   /** Extra controls at the right of the title bar. */
   trailing?: ReactNode;
+  /** Between the title bar and the lanes: starting a thread with a bot. */
+  spawn?: ReactNode;
+  /** Under the lanes: pinned and recent threads. */
+  threadsMenu?: ReactNode;
 }
 
 export function Panel(props: PanelProps) {
@@ -79,10 +84,6 @@ export function Panel(props: PanelProps) {
         role={floating ? "group" : undefined}
         aria-label={floating ? "Bot Stage popout — move it with the arrow keys" : undefined}
       >
-        <span className="bst-brand">{props.title ?? "Bot Stage"}</span>
-        <span className="bst-lamp" data-state={needed > 0 ? "needs" : working > 0 ? "live" : "quiet"}>
-          {needed > 0 ? "NEEDS YOU" : working > 0 ? "ON AIR" : "QUIET"}
-        </span>
         <span className="bst-grow" aria-hidden />
         <button
           type="button"
@@ -123,16 +124,19 @@ export function Panel(props: PanelProps) {
         )}
       </header>
 
+      {props.spawn}
+
       <Stage
         lanes={lanes}
         variant={variant}
         workspaceScale={workspace / 100}
         onOpen={props.onOpen}
         onDismiss={props.onDismiss}
+        onTogglePin={props.onTogglePin}
         listRef={list}
         onScroll={measure}
         className={`${more ? "bst-fade-bottom" : ""} ${floating ? "bst-floating-list" : ""}`}
-        style={variant === "compact" && listCap !== undefined ? { maxHeight: listCap } : undefined}
+        style={variant === "compact" && listCap !== undefined ? { maxHeight: `min(${listCap}px, 38vh)` } : undefined}
         empty={
           <p className="bst-empty">
             {props.stale
@@ -143,6 +147,7 @@ export function Panel(props: PanelProps) {
           </p>
         }
       />
+      {props.threadsMenu}
     </div>
   );
 }

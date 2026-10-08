@@ -123,6 +123,10 @@ afterEach(() => {
     for (const pressed of Array.from(document.querySelectorAll('[aria-pressed="true"]'))) {
       (pressed as HTMLElement).click();
     }
+    // The threads menu is module state too: close it so the next test starts shut.
+    for (const open of Array.from(document.querySelectorAll('.bst-threads-head[aria-expanded="true"]'))) {
+      (open as HTMLElement).click();
+    }
   });
   for (const slot of mounted.splice(0)) {
     try {
@@ -199,7 +203,7 @@ describe("a lane", () => {
     expect(slot.getByText("Fix the flaky test")).toBeTruthy();
     // A message that was said before you looked is simply there, not retyped.
     expect(slot.getByText("Found the race. Fixing it now.")).toBeTruthy();
-    expect(slot.getByText("ON AIR")).toBeTruthy();
+    expect(slot.getByText("1/1 working")).toBeTruthy();
     expect(slot.getByRole("img", { name: /BB Architect/ })).toBeTruthy();
   });
 
@@ -230,11 +234,11 @@ describe("a lane", () => {
     expect(slot.getByText(/Running command: git commit/)).toBeTruthy();
   });
 
-  it("says it needs you, and puts the lamp on", async () => {
+  it("says it needs you", async () => {
     const waiting = frameOf(laneRow({ busy: false, waiting: "question", said: { id: "q1", text: "Which one?", done: true } }));
     const slot = peek({ rpc: rpc(waiting), sidebarThreads: ready() });
     expect(await slot.findByText("Which one?")).toBeTruthy();
-    expect(slot.getByText("NEEDS YOU")).toBeTruthy();
+    expect(slot.getByText(/1 waiting/)).toBeTruthy();
     // The sidebar can know before the event log does.
     expect(slot.getByRole("img", { name: /needs you/i })).toBeTruthy();
   });
@@ -246,7 +250,7 @@ describe("a lane", () => {
       sidebarThreads: ready([thread({ hasPendingInteraction: true })]),
     });
     await slot.findByText("Fix the flaky test");
-    expect(slot.getByText("NEEDS YOU")).toBeTruthy();
+    expect(slot.getByText(/1 waiting/)).toBeTruthy();
   });
 });
 
@@ -372,6 +376,25 @@ describe("clicking", () => {
     const words = await slot.findByText("Found the race. Fixing it now.");
     fireEvent.click(words.closest("button") as HTMLElement);
     await vi.waitFor(() => expect(slot.inspection.sidebarActionCalls).toHaveLength(1));
+  });
+});
+
+describe("pinning from a bot's card", () => {
+  it("pins and unpins a thread without opening the threads menu", async () => {
+    const pinned = thread({ id: "thr_a", title: "Fix the flaky test", isPinned: true, pinnedAt: 100 });
+    const slot = peek({ rpc: rpc(), sidebarThreads: ready([pinned]) });
+    await slot.findByText("Fix the flaky test");
+    const pin = slot.getByRole("button", { name: "Unpin Fix the flaky test" });
+    expect(pin.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(pin);
+    expect(slot.inspection.sidebarActionCalls).toEqual([{ method: "setPinned", threadId: "thr_a", pinned: false }]);
+  });
+
+  it("offers to pin a thread that is not pinned yet", async () => {
+    const slot = peek({ rpc: rpc(), sidebarThreads: ready() });
+    await slot.findByText("Fix the flaky test");
+    fireEvent.click(slot.getByRole("button", { name: "Pin Fix the flaky test" }));
+    expect(slot.inspection.sidebarActionCalls).toEqual([{ method: "setPinned", threadId: "thr_a", pinned: true }]);
   });
 });
 
@@ -505,5 +528,53 @@ describe("the floating monitor", () => {
     fireEvent.click(slot.getByRole("button", { name: "Pop out Bot Stage" }));
     const panel = await popout.findByTestId("bot-stage-popout");
     expect(panel.style.transform).toContain("12px");
+  });
+});
+
+describe("the threads menu", () => {
+  const threads = [
+    thread({ id: "thr_old", title: "Older chat", updatedAt: 1_000, indicator: "none" }),
+    thread({ id: "thr_new", title: "Newest chat", updatedAt: 3_000, indicator: "none" }),
+    thread({ id: "thr_pin", title: "Pinned chat", updatedAt: 2_000, indicator: "none", isPinned: true, pinnedAt: 500 }),
+    thread({ id: "thr_sub", title: "A subagent", parentThreadId: "thr_new", updatedAt: 4_000, indicator: "none" }),
+    thread({ id: "thr_gone", title: "Archived chat", isArchived: true, updatedAt: 5_000, indicator: "none" }),
+  ];
+
+  async function opened() {
+    const slot = peek({ rpc: rpc(), sidebarThreads: ready(threads) });
+    await slot.findByText("BB Architect");
+    expect(document.querySelector(".bst-threads-body")).toBeNull();
+    fireEvent.click(slot.getByRole("button", { name: /Threads/ }));
+    return slot;
+  }
+  const titles = (list: Element | null | undefined) =>
+    Array.from(list?.querySelectorAll(".bst-thread-title") ?? []).map((node) => node.textContent);
+
+  it("is shut until you open it, then lists pinned threads and the newest of the rest", async () => {
+    await opened();
+    const [pinned, recent] = Array.from(document.querySelectorAll(".bst-threads-list"));
+    expect(titles(pinned)).toEqual(["Pinned chat"]);
+    // Newest first; no sub-threads, no archived ones, nothing already pinned.
+    expect(titles(recent)).toEqual(["Newest chat", "Older chat"]);
+  });
+
+  it("opens a thread, and splits it on a modified click", async () => {
+    const slot = await opened();
+    fireEvent.click(slot.getByTitle("Newest chat"));
+    fireEvent.click(slot.getByTitle("Older chat"), { shiftKey: true });
+    expect(slot.inspection.sidebarActionCalls).toEqual([
+      { method: "open", threadId: "thr_new", options: { split: false } },
+      { method: "open", threadId: "thr_old", options: { split: true } },
+    ]);
+  });
+
+  it("pins and unpins through BB's own pin", async () => {
+    const slot = await opened();
+    fireEvent.click(slot.getByRole("button", { name: "Pin Older chat" }));
+    fireEvent.click(slot.getByRole("button", { name: "Unpin Pinned chat" }));
+    expect(slot.inspection.sidebarActionCalls).toEqual([
+      { method: "setPinned", threadId: "thr_old", pinned: true },
+      { method: "setPinned", threadId: "thr_pin", pinned: false },
+    ]);
   });
 });

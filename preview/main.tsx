@@ -220,7 +220,7 @@ function Preview() {
     <div className="pv" data-theme={dark ? "dark" : "light"}>
       {view !== "page" ? (
         <aside className="pv-sidebar">
-          <div className="bst-panel-host">
+          <div className="bst-sidebar-module">
             <Panel
               lanes={shown}
               variant="compact"
