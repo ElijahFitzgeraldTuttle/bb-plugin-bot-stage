@@ -271,7 +271,7 @@
 .bst-lane {
   position: relative;
   display: flex;
-  align-items: stretch;
+  align-items: center;
   gap: 4px;
   box-sizing: border-box;
   height: calc(var(--lane-h) * var(--bst-lane-scale, 1));
@@ -338,7 +338,8 @@
 .bst-workspace {
   position: absolute;
   left: 1px;
-  top: 3px;
+  top: calc(50% - 64px * var(--bst-workspace-scale, 1));
+  box-sizing: border-box;
   width: calc(128px * var(--bst-workspace-scale, 1));
   height: calc(128px * var(--bst-workspace-scale, 1));
   z-index: 0;
@@ -360,7 +361,7 @@
 .bst-lane[data-variant="compact"] .bst-actor {
   position: absolute;
   left: calc(5px * var(--bst-workspace-scale, 1));
-  top: calc(3px + 53px * var(--bst-workspace-scale, 1));
+  top: calc(50% - 11px * var(--bst-workspace-scale, 1));
   bottom: auto;
 }
 
@@ -370,13 +371,12 @@
 
 .bst-lane[data-variant="roomy"] .bst-workspace {
   left: 12px;
-  top: 16px;
 }
 
 .bst-lane[data-variant="roomy"] .bst-actor {
   position: absolute;
   left: 4px;
-  top: calc(16px + var(--bst-workspace-scale, 1) * 1px);
+  top: calc(50% - 63px * var(--bst-workspace-scale, 1));
 }
 
 .bst-lane[data-variant="roomy"] .bst-talk {
