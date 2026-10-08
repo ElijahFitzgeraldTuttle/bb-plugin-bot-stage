@@ -24,6 +24,12 @@ bb plugin install https://github.com/ElijahFitzgeraldTuttle/bb-plugin-bot-stage
 Open **Bot Stage** from BB's sidebar. Install Bots Sidebar to use your existing
 bot identities and avatars.
 
+Use the **… options** button in the stage header to adjust **Workspace size**
+(pixel workspace and bot) and **Details size** (the text and controls to its
+right) independently from 75–150%. Both settings apply across all three views
+and are saved in this browser, including across reloads. **Reset sizes** restores
+both to 100%.
+
 ## Development
 
 ```sh

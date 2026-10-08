@@ -48,9 +48,62 @@
 
 .bst-bar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   padding: 2px 6px 6px;
+}
+
+.bst-options {
+  display: contents;
+  cursor: default;
+}
+
+.bst-options-menu {
+  flex-basis: 100%;
+  order: 1;
+  margin-top: 6px;
+  padding: 12px;
+  box-sizing: border-box;
+  border: 1px solid var(--bst-line);
+  border-radius: 10px;
+  background: var(--bst-bg);
+  box-shadow: 0 6px 20px #0003;
+  font: 12px/1.4 system-ui, sans-serif;
+}
+
+.bst-size-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.bst-size-label output {
+  font-variant-numeric: tabular-nums;
+  color: var(--bst-muted);
+}
+
+.bst-options-menu input[type="range"] {
+  display: block;
+  width: 100%;
+  margin: 10px 0;
+  accent-color: var(--bst-fg);
+  cursor: pointer;
+}
+
+.bst-size-reset {
+  border: 1px solid var(--bst-line);
+  border-radius: 5px;
+  padding: 3px 7px;
+  background: var(--bst-hover);
+  color: var(--bst-fg);
+  cursor: pointer;
+  font: inherit;
+}
+
+.bst-size-reset:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .bst-bar[data-draggable="true"] {
@@ -106,7 +159,7 @@
   all: unset;
   box-sizing: border-box;
   cursor: pointer;
-  flex: 0 1 auto;
+  flex: 1 1 0;
   min-width: 0;
   max-width: 11em;
   overflow: hidden;
@@ -195,6 +248,10 @@
   max-height: calc(100vh - 7rem);
 }
 
+.bst-panel:has(.bst-options-menu) .bst-floating-list {
+  max-height: calc(100vh - 19rem);
+}
+
 .bst-fade-bottom {
   mask-image: linear-gradient(to bottom, #000 calc(100% - 18px), transparent);
   -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 18px), transparent);
@@ -202,7 +259,7 @@
 
 .bst-list[data-variant="roomy"] {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 380px), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, calc(150px * var(--bst-workspace-scale, 1) + 230px * var(--bst-details-scale, 1))), 1fr));
   gap: 10px;
   overflow: visible;
 }
@@ -217,8 +274,8 @@
   align-items: stretch;
   gap: 4px;
   box-sizing: border-box;
-  height: var(--lane-h);
-  max-height: var(--lane-h);
+  height: calc(var(--lane-h) * var(--bst-lane-scale, 1));
+  max-height: calc(var(--lane-h) * var(--bst-lane-scale, 1));
   padding: 4px 8px 4px 2px;
   border: 1px solid transparent;
   border-radius: 14px;
@@ -282,16 +339,16 @@
   position: absolute;
   left: 1px;
   top: 3px;
-  width: 128px;
-  height: 128px;
+  width: calc(128px * var(--bst-workspace-scale, 1));
+  height: calc(128px * var(--bst-workspace-scale, 1));
   z-index: 0;
   pointer-events: none;
 }
 
 .bst-workspace canvas {
   display: block;
-  width: 128px;
-  height: 128px;
+  width: 100%;
+  height: 100%;
   image-rendering: pixelated;
 }
 
@@ -302,12 +359,13 @@
 
 .bst-lane[data-variant="compact"] .bst-actor {
   position: absolute;
-  left: 5px;
-  bottom: 8px;
+  left: calc(5px * var(--bst-workspace-scale, 1));
+  top: calc(3px + 53px * var(--bst-workspace-scale, 1));
+  bottom: auto;
 }
 
 .bst-lane[data-variant="compact"] .bst-talk {
-  margin-left: 132px;
+  margin-left: calc(132px * var(--bst-workspace-scale, 1) / var(--bst-details-scale, 1));
 }
 
 .bst-lane[data-variant="roomy"] .bst-workspace {
@@ -315,9 +373,20 @@
   top: 16px;
 }
 
+.bst-lane[data-variant="roomy"] .bst-actor {
+  position: absolute;
+  left: 4px;
+  top: calc(16px + var(--bst-workspace-scale, 1) * 1px);
+}
+
+.bst-lane[data-variant="roomy"] .bst-talk {
+  margin-left: calc((146px * var(--bst-workspace-scale, 1) + 4px) / var(--bst-details-scale, 1));
+}
+
 .bst-talk {
   position: relative;
   z-index: 2;
+  zoom: var(--bst-details-scale, 1);
 }
 
 .bst-actor canvas {
@@ -850,7 +919,7 @@
   right: 1rem;
   bottom: 1rem;
   z-index: 50;
-  width: min(380px, calc(100vw - 2rem));
+  width: min(var(--bst-panel-width, 380px), calc(100vw - 2rem));
   max-height: calc(100vh - 2rem);
   overflow: hidden;
   border-radius: 16px;
@@ -923,7 +992,7 @@
   60% {
     opacity: 0;
     transform: translateX(26px) scale(0.97);
-    max-height: var(--lane-h);
+    max-height: calc(var(--lane-h) * var(--bst-lane-scale, 1));
   }
   100% {
     opacity: 0;

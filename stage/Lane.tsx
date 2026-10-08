@@ -67,6 +67,7 @@ const LOUD = new Set<Mood>(["needs", "failed", "done", "held"]);
 export interface LaneProps {
   model: LaneModel;
   variant: Variant;
+  workspaceScale: number;
   /** Position in the list, for the staggered entrance. */
   index: number;
   /** Play the entrance (the first time the stage fills in). */
@@ -76,7 +77,7 @@ export interface LaneProps {
   onDismiss?: (threadId: string) => void;
 }
 
-export function Lane({ model, variant, index, entering, leaving, onOpen, onDismiss }: LaneProps) {
+export function Lane({ model, variant, workspaceScale, index, entering, leaving, onOpen, onDismiss }: LaneProps) {
   const { row, bot } = model;
   const size = SIZES[variant];
   const bubble = useRef<HTMLDivElement>(null);
@@ -146,10 +147,10 @@ export function Lane({ model, variant, index, entering, leaving, onOpen, onDismi
       <Workspace scene={model.workspace ?? null} />
       <ActorCanvas
         bot={bot}
-        k={size.actor.k}
+        k={size.actor.k * workspaceScale}
         anchor={size.actor.anchor}
-        width={size.actor.width}
-        height={size.actor.height}
+        width={size.actor.width * workspaceScale}
+        height={size.actor.height * workspaceScale}
         spawnDelay={entering ? 140 + index * 110 : 0}
         input={input}
         label={label}

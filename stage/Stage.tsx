@@ -16,6 +16,7 @@ const INTRO_MS = 900;
 export interface StageProps {
   lanes: readonly LaneModel[];
   variant: Variant;
+  workspaceScale?: number;
   onOpen: (threadId: string, split: boolean) => void;
   onDismiss?: (threadId: string) => void;
   /** Shown instead of the list when there is nothing to put on stage. */
@@ -26,7 +27,7 @@ export interface StageProps {
   style?: React.CSSProperties;
 }
 
-export function Stage({ lanes, variant, onOpen, onDismiss, empty, className, onScroll, listRef, style }: StageProps) {
+export function Stage({ lanes, variant, workspaceScale = 1, onOpen, onDismiss, empty, className, onScroll, listRef, style }: StageProps) {
   const own = useRef<HTMLUListElement | null>(null);
   const ref = listRef ?? own;
   const born = useRef(performance.now());
@@ -43,6 +44,7 @@ export function Stage({ lanes, variant, onOpen, onDismiss, empty, className, onS
           key={entry.item.id}
           model={entry.item.lane}
           variant={variant}
+          workspaceScale={workspaceScale}
           index={intro ? index : 0}
           entering
           leaving={entry.leaving}

@@ -404,6 +404,61 @@ describe("quiet bots", () => {
   });
 });
 
+describe("UI size", () => {
+  it("adjusts workspace and details independently across views and restores both on remount", async () => {
+    const compact = peek({ rpc: rpc(), sidebarThreads: ready() });
+    const roomy = page({ rpc: rpc(), sidebarThreads: ready() });
+    const controls = within(compact.container);
+    fireEvent.click(controls.getByRole("button", { name: "Bot Stage options" }));
+    fireEvent.change(controls.getByRole("slider", { name: "Workspace size" }), { target: { value: "125" } });
+    expect((controls.getByRole("slider", { name: "Details size" }) as HTMLInputElement).value).toBe("100");
+    fireEvent.change(controls.getByRole("slider", { name: "Details size" }), { target: { value: "85" } });
+    expect(window.localStorage.getItem("bb-plugin-bot-stage:workspace-size")).toBe("125");
+    expect(window.localStorage.getItem("bb-plugin-bot-stage:details-size")).toBe("85");
+    for (const view of [compact, roomy]) {
+      const panel = view.container.querySelector(".bst-panel") as HTMLElement;
+      expect(panel.style.getPropertyValue("--bst-workspace-scale")).toBe("1.25");
+      expect(panel.style.getPropertyValue("--bst-details-scale")).toBe("0.85");
+    }
+    compact.lifecycle.unmount();
+    roomy.lifecycle.unmount();
+    const restored = peek({ rpc: rpc(), sidebarThreads: ready() });
+    const restoredControls = within(restored.container);
+    fireEvent.click(restoredControls.getByRole("button", { name: "Bot Stage options" }));
+    expect((restoredControls.getByRole("slider", { name: "Workspace size" }) as HTMLInputElement).value).toBe("125");
+    expect((restoredControls.getByRole("slider", { name: "Details size" }) as HTMLInputElement).value).toBe("85");
+    fireEvent.click(restoredControls.getByRole("button", { name: "Reset sizes" }));
+    expect(window.localStorage.getItem("bb-plugin-bot-stage:workspace-size")).toBe("100");
+    expect(window.localStorage.getItem("bb-plugin-bot-stage:details-size")).toBe("100");
+  });
+
+  it.each([["invalid", "1"], ["500", "1.5"], ["0", "0.75"]])("handles stored size %s", (stored, scale) => {
+    window.localStorage.setItem("bb-plugin-bot-stage:workspace-size", stored);
+    const slot = peek({ rpc: rpc(), sidebarThreads: ready() });
+    expect((slot.container.querySelector(".bst-panel") as HTMLElement).style.getPropertyValue("--bst-workspace-scale")).toBe(scale);
+  });
+
+  it("keeps slider controls from dragging or closing the floating monitor", async () => {
+    const popout = overlay({ rpc: rpc(), sidebarThreads: ready() });
+    const slot = peek({ rpc: rpc(), sidebarThreads: ready() });
+    fireEvent.click(within(slot.container).getByRole("button", { name: "Pop out Bot Stage" }));
+    const floating = await popout.findByTestId("bot-stage-popout");
+    const controls = within(floating);
+    fireEvent.click(controls.getByRole("button", { name: "Bot Stage options" }));
+    const slider = controls.getByRole("slider", { name: "Workspace size" });
+    const before = floating.style.transform;
+    fireEvent.pointerDown(slider, { button: 0, clientX: 10, clientY: 10 });
+    fireEvent.pointerMove(window, { clientX: 60, clientY: 60 });
+    fireEvent.pointerUp(window);
+    fireEvent.keyDown(slider, { key: "ArrowRight" });
+    expect(floating.style.transform).toBe(before);
+    fireEvent.keyDown(slider, { key: "Escape" });
+    expect(controls.queryByRole("slider")).toBeNull();
+    expect(popout.queryByTestId("bot-stage-popout")).not.toBeNull();
+    expect(document.activeElement).toBe(controls.getByRole("button", { name: "Bot Stage options" }));
+  });
+});
+
 describe("the page", () => {
   it("gives every bot a roomy lane, with the project it belongs to", async () => {
     const slot = page({ rpc: rpc(), sidebarThreads: ready() });

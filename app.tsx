@@ -15,7 +15,8 @@
 // Everything that draws lives in stage/, which knows nothing about BB. This
 // file only turns BB's data into lane models and wires up the registrations.
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
+import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
+import { useUiSize } from "./lib/ui-size";
 import {
   definePluginApp,
   experimental_ProviderIcon,
@@ -526,6 +527,8 @@ type DragState = { startX: number; startY: number; originX: number; originY: num
 
 /** App-wide draggable monitor, opened from the footer peek's pop-out button. */
 function PopoutStage() {
+  const workspace = useUiSize("workspace");
+  const details = useUiSize("details");
   const open = useStore(popoutStore);
   const [offset, setOffset] = useState<Offset>(readOffset);
   const panel = useRef<HTMLDivElement | null>(null);
@@ -632,7 +635,7 @@ function PopoutStage() {
       role="dialog"
       aria-label="Bot Stage popout"
       className="bst-popout"
-      style={{ transform: `translate3d(${offset.x}px, ${offset.y}px, 0)` }}
+      style={{ transform: `translate3d(${offset.x}px, ${offset.y}px, 0)`, "--bst-panel-width": `${132 * workspace / 100 + 248 * details / 100}px` } as CSSProperties}
     >
       <LiveStage
         variant="compact"
